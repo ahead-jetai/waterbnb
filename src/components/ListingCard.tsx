@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import StarRating from './StarRating'
 import type { Listing } from '../types'
 
@@ -7,7 +8,8 @@ type Props = {
 
 export default function ListingCard({ item }: Props) {
   return (
-    <article className="card overflow-hidden" aria-label={`${item.title} in ${item.location}`}>
+    <Link to={`/listing/${item.id}`} className="block">
+      <article className="card overflow-hidden hover:shadow-lg transition-shadow duration-300" aria-label={`${item.title} in ${item.location}`}>
       <div className="aspect-[4/3] bg-slate-100 overflow-hidden">
         <img
           src={item.image}
@@ -36,5 +38,6 @@ export default function ListingCard({ item }: Props) {
         </div>
       </div>
     </article>
+    </Link>
   )
 }
