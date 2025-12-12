@@ -10,6 +10,8 @@ type Props = {
   intervalMs?: number
 }
 
+
+
 export default function Carousel({ slides, intervalMs = 3500 }: Props) {
   const [index, setIndex] = useState(0)
   const timer = useRef<number | null>(null)
