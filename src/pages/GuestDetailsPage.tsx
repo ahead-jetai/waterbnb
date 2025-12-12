@@ -1,6 +1,6 @@
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useState, useEffect } from 'react'
-import { BookingData, GuestDetails } from '../types'
+import { BookingData, GuestDetails } from '../bookingTypes'
 
 export default function GuestDetailsPage() {
   const { listingId } = useParams<{ listingId: string }>()

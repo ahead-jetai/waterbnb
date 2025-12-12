@@ -2,7 +2,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { listings } from '../data/listings';
 import StarRating from '../components/StarRating';
-import { BookingData } from '../types';
+import { BookingData } from '../bookingTypes';
 
 export default function ListingDetailPage() {
   const { id } = useParams<{ id: string }>();

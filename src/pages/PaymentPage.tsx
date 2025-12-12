@@ -1,6 +1,6 @@
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useState, useEffect } from 'react'
-import { BookingData, PaymentDetails } from '../types'
+import { BookingData, PaymentDetails } from '../bookingTypes'
 import { listings } from '../data/listings'
 
 export default function PaymentPage() {
