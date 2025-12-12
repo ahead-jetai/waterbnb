@@ -8,3 +8,30 @@ export type Listing = {
   image: string
   tags: string[]
 }
+
+export type BookingDates = {
+  checkIn: string // ISO date string
+  checkOut: string
+}
+
+export type GuestDetails = {
+  name: string
+  email: string
+  phone: string
+  specialRequests?: string
+}
+
+export type PaymentDetails = {
+  cardNumber: string
+  expiryDate: string
+  cvv: string
+  nameOnCard: string
+}
+
+export type BookingData = {
+  listingId: string
+  dates: BookingDates
+  guests: number
+  guestDetails?: GuestDetails
+  paymentDetails?: PaymentDetails
+}

@@ -1,10 +1,16 @@
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 import { listings } from '../data/listings';
 import StarRating from '../components/StarRating';
+import { BookingData } from '../types';
 
 export default function ListingDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const listing = listings.find(l => l.id === id);
+  const [checkIn, setCheckIn] = useState('');
+  const [checkOut, setCheckOut] = useState('');
+  const [guests, setGuests] = useState(1);
 
   if (!listing) {
     return (
@@ -17,6 +23,39 @@ export default function ListingDetailPage() {
       </div>
     );
   }
+
+  const handleReserve = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Validate dates
+    if (!checkIn || !checkOut) {
+      alert('Please select check-in and check-out dates');
+      return;
+    }
+
+    const checkInDate = new Date(checkIn);
+    const checkOutDate = new Date(checkOut);
+
+    if (checkOutDate <= checkInDate) {
+      alert('Check-out date must be after check-in date');
+      return;
+    }
+
+    // Create booking data
+    const bookingData: BookingData = {
+      listingId: listing.id,
+      dates: {
+        checkIn,
+        checkOut
+      },
+      guests
+    };
+
+    // Navigate to booking review page with state
+    navigate(`/booking/${listing.id}/review`, {
+      state: { bookingData }
+    });
+  };
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -106,28 +145,42 @@ export default function ListingDetailPage() {
             </div>
 
             {/* Booking Form */}
-            <form className="space-y-4">
+            <form onSubmit={handleReserve} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-2">Check-in</label>
                 <input
                   type="date"
+                  value={checkIn}
+                  onChange={(e) => setCheckIn(e.target.value)}
+                  min={new Date().toISOString().split('T')[0]}
                   className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-2">Check-out</label>
                 <input
                   type="date"
+                  value={checkOut}
+                  onChange={(e) => setCheckOut(e.target.value)}
+                  min={checkIn || new Date().toISOString().split('T')[0]}
                   className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-2">Guests</label>
-                <select className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                  <option>1 guest</option>
-                  <option>2 guests</option>
-                  <option>3 guests</option>
-                  <option>4 guests</option>
+                <select
+                  value={guests}
+                  onChange={(e) => setGuests(parseInt(e.target.value))}
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value={1}>1 guest</option>
+                  <option value={2}>2 guests</option>
+                  <option value={3}>3 guests</option>
+                  <option value={4}>4 guests</option>
+                  <option value={5}>5 guests</option>
+                  <option value={6}>6 guests</option>
                 </select>
               </div>
               <button type="submit" className="btn-primary w-full">
