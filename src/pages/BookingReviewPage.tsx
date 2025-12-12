@@ -1,6 +1,6 @@
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { listings } from '../data/listings'
-import { BookingData } from '../bookingTypes'
+import type { BookingData } from '../bookingTypes'
 import { useEffect, useState } from 'react'
 
 export default function BookingReviewPage() {

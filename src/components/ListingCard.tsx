@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import StarRating from './StarRating'
-import type { Listing } from '../types'
+import type { Listing } from '../bookingTypes'
 
 type Props = {
   item: Listing

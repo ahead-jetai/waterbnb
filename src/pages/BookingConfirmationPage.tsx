@@ -1,6 +1,6 @@
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useEffect, useState } from 'react'
-import { BookingData } from '../bookingTypes'
+import type { BookingData } from '../bookingTypes'
 import { listings } from '../data/listings'
 
 export default function BookingConfirmationPage() {
