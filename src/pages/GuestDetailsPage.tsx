@@ -76,7 +76,7 @@ export default function GuestDetailsPage() {
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="card">
+        <form onSubmit={handleSubmit} className="card p-6">
           <div className="space-y-6">
             <div>
               <label htmlFor="name" className="block text-sm font-semibold mb-2">

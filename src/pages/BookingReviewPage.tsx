@@ -64,7 +64,7 @@ export default function BookingReviewPage() {
         <div className="grid md:grid-cols-2 gap-8">
           {/* Left Column - Listing Info */}
           <div>
-            <div className="card mb-6">
+            <div className="card p-6 mb-6">
               <img
                 src={listing.image}
                 alt={listing.title}
@@ -79,7 +79,7 @@ export default function BookingReviewPage() {
               </div>
             </div>
 
-            <div className="card">
+            <div className="card p-6">
               <h3 className="text-lg font-semibold mb-4">Your trip details</h3>
               <div className="space-y-4">
                 <div>
@@ -101,7 +101,7 @@ export default function BookingReviewPage() {
 
           {/* Right Column - Price Breakdown */}
           <div>
-            <div className="card sticky top-8">
+            <div className="card p-6 sticky top-8">
               <h3 className="text-lg font-semibold mb-4">Price details</h3>
               <div className="space-y-3 mb-4">
                 <div className="flex justify-between">
