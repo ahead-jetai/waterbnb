@@ -141,7 +141,7 @@ export default function PaymentPage() {
         <div className="grid md:grid-cols-2 gap-8">
           {/* Left Column - Payment Form */}
           <div>
-            <form onSubmit={handleSubmit} className="card">
+            <form onSubmit={handleSubmit} className="card p-6">
               <div className="flex justify-between items-center mb-6">
                 <h3 className="text-lg font-semibold">Pay with card</h3>
                 <button
@@ -235,7 +235,7 @@ export default function PaymentPage() {
 
           {/* Right Column - Booking Summary */}
           <div>
-            <div className="card sticky top-8">
+            <div className="card p-6 sticky top-8">
               <h3 className="text-lg font-semibold mb-4">Booking summary</h3>
 
               <div className="mb-4">

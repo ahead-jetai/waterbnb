@@ -64,7 +64,7 @@ export default function BookingConfirmationPage() {
         </div>
 
         {/* Booking Reference */}
-        <div className="card mb-6 bg-sky-50 border-2 border-sky-200">
+        <div className="card p-6 mb-6 bg-sky-50 border-2 border-sky-200">
           <div className="text-center">
             <p className="text-sm text-gray-600 mb-1">Booking Reference</p>
             <p className="text-2xl font-bold text-sky-600">{bookingReference}</p>
@@ -72,7 +72,7 @@ export default function BookingConfirmationPage() {
         </div>
 
         {/* Booking Details */}
-        <div className="card mb-6">
+        <div className="card p-6 mb-6">
           <h2 className="text-xl font-bold mb-4">Your trip details</h2>
 
           <div className="flex gap-4 mb-6">
@@ -143,7 +143,7 @@ export default function BookingConfirmationPage() {
         </div>
 
         {/* Payment Summary */}
-        <div className="card mb-6">
+        <div className="card p-6 mb-6">
           <h2 className="text-xl font-bold mb-4">Payment summary</h2>
           <div className="space-y-2">
             <div className="flex justify-between">
@@ -171,7 +171,7 @@ export default function BookingConfirmationPage() {
         </div>
 
         {/* Next Steps */}
-        <div className="card mb-6 bg-blue-50 border-2 border-blue-200">
+        <div className="card p-6 mb-6 bg-blue-50 border-2 border-blue-200">
           <h2 className="text-xl font-bold mb-3">Next steps</h2>
           <ul className="space-y-2 text-gray-700">
             <li className="flex items-start gap-2">
