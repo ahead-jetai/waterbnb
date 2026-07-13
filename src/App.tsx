@@ -7,6 +7,8 @@ import BookingReviewPage from './pages/BookingReviewPage'
 import GuestDetailsPage from './pages/GuestDetailsPage'
 import PaymentPage from './pages/PaymentPage'
 import BookingConfirmationPage from './pages/BookingConfirmationPage'
+import HostLandingPage from './pages/HostLandingPage'
+import HostListingPage from './pages/HostListingPage'
 
 export default function App() {
   return (
@@ -20,6 +22,8 @@ export default function App() {
           <Route path="/booking/:listingId/guest-details" element={<GuestDetailsPage />} />
           <Route path="/booking/:listingId/payment" element={<PaymentPage />} />
           <Route path="/booking/:listingId/confirmation" element={<BookingConfirmationPage />} />
+          <Route path="/host" element={<HostLandingPage />} />
+          <Route path="/host/list" element={<HostListingPage />} />
         </Routes>
         <Footer />
       </div>

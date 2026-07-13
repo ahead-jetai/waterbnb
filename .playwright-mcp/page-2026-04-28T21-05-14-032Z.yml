@@ -1,0 +1,362 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - link "WaterBnB home" [ref=e6] [cursor=pointer]:
+        - /url: /
+        - img [ref=e8]
+        - generic [ref=e11]: WaterBnB
+      - navigation "Primary" [ref=e12]:
+        - link "Explore" [ref=e13] [cursor=pointer]:
+          - /url: "#explore"
+        - link "Host a Boat" [ref=e14] [cursor=pointer]:
+          - /url: "#host"
+        - link "About" [ref=e15] [cursor=pointer]:
+          - /url: "#about"
+      - link "Get started" [ref=e17] [cursor=pointer]:
+        - /url: "#get-started"
+        - text: Get Started
+  - main [ref=e18]:
+    - region "Hero section" [ref=e19]:
+      - img "Coastline with boats" [ref=e21]
+      - generic [ref=e23]:
+        - paragraph [ref=e24]: Unique water-based stays worldwide
+        - heading "Stay on the water, wake to adventure." [level=1] [ref=e25]:
+          - text: Stay on the water,
+          - emphasis [ref=e26]: wake to adventure.
+        - paragraph [ref=e27]: Discover cabins, yachts, and houseboats around the world. From harbor hideaways to open-sea escapes.
+        - generic [ref=e28]:
+          - link "Explore listings" [ref=e29] [cursor=pointer]:
+            - /url: "#explore"
+            - text: Explore Listings
+          - link "Become a host" [ref=e30] [cursor=pointer]:
+            - /url: "#host"
+            - text: Become a Host
+      - generic [ref=e32]:
+        - generic [ref=e33]:
+          - generic [ref=e34]: 200+
+          - generic [ref=e35]: Unique Stays
+        - generic [ref=e37]:
+          - generic [ref=e38]: 40+
+          - generic [ref=e39]: Countries
+        - generic [ref=e41]:
+          - generic [ref=e42]: 4.9★
+          - generic [ref=e43]: Avg. Rating
+        - generic [ref=e45]:
+          - generic [ref=e46]: 10k+
+          - generic [ref=e47]: Happy Guests
+    - region "Featured boats" [ref=e49]:
+      - generic [ref=e50]:
+        - list [ref=e51]:
+          - listitem [ref=e52]:
+            - img "Catamaran at sunset" [ref=e53]
+          - listitem [ref=e54]:
+            - img [ref=e55]
+          - listitem [ref=e56]:
+            - img [ref=e57]
+          - listitem [ref=e58]:
+            - img [ref=e59]
+        - button "Previous slide" [ref=e61] [cursor=pointer]:
+          - img [ref=e62]
+        - button "Next slide" [ref=e65] [cursor=pointer]:
+          - img [ref=e66]
+        - generic [ref=e68]:
+          - button "Go to slide 1" [ref=e69] [cursor=pointer]
+          - button "Go to slide 2" [ref=e70] [cursor=pointer]
+          - button "Go to slide 3" [ref=e71] [cursor=pointer]
+          - button "Go to slide 4" [ref=e72] [cursor=pointer]
+    - region "Featured Listings" [ref=e73]:
+      - generic [ref=e74]:
+        - generic [ref=e75]:
+          - heading "Featured Listings" [level=2] [ref=e76]
+          - paragraph [ref=e77]: Handpicked stays on boats and houseboats worldwide.
+        - link "View all" [ref=e78] [cursor=pointer]:
+          - /url: "#"
+      - list [ref=e79]:
+        - listitem [ref=e80]:
+          - link "Classic Sailboat Cabin in Split, Croatia" [ref=e81] [cursor=pointer]:
+            - /url: /listing/l1
+            - article "Classic Sailboat Cabin in Split, Croatia" [ref=e82]:
+              - generic [ref=e83]:
+                - img "Classic Sailboat Cabin — Split, Croatia" [ref=e84]
+                - generic [ref=e86]:
+                  - generic [ref=e87]: $180
+                  - text: /night
+              - generic [ref=e88]:
+                - heading "Classic Sailboat Cabin" [level=3] [ref=e89]
+                - paragraph [ref=e90]:
+                  - img [ref=e91]
+                  - text: Split, Croatia
+                - generic "Rated 4.83 out of 5 from 128 reviews" [ref=e93]:
+                  - img [ref=e94]
+                  - img [ref=e96]
+                  - img [ref=e98]
+                  - img [ref=e100]
+                  - img [ref=e102]
+                  - generic [ref=e104]: "4.83"
+                  - generic [ref=e105]: (128)
+                - generic [ref=e106]:
+                  - generic [ref=e107]: Private cabin
+                  - generic [ref=e108]: Wi‑Fi
+                  - generic [ref=e109]: Harbor view
+        - listitem [ref=e110]:
+          - link "Modern Catamaran Suite in Santorini, Greece" [ref=e111] [cursor=pointer]:
+            - /url: /listing/l2
+            - article "Modern Catamaran Suite in Santorini, Greece" [ref=e112]:
+              - generic [ref=e113]:
+                - img "Modern Catamaran Suite — Santorini, Greece" [ref=e114]
+                - generic [ref=e116]:
+                  - generic [ref=e117]: $320
+                  - text: /night
+              - generic [ref=e118]:
+                - heading "Modern Catamaran Suite" [level=3] [ref=e119]
+                - paragraph [ref=e120]:
+                  - img [ref=e121]
+                  - text: Santorini, Greece
+                - generic "Rated 4.92 out of 5 from 87 reviews" [ref=e123]:
+                  - img [ref=e124]
+                  - img [ref=e126]
+                  - img [ref=e128]
+                  - img [ref=e130]
+                  - img [ref=e132]
+                  - generic [ref=e134]: "4.92"
+                  - generic [ref=e135]: (87)
+                - generic [ref=e136]:
+                  - generic [ref=e137]: Entire boat
+                  - generic [ref=e138]: Skipper optional
+                  - generic [ref=e139]: Breakfast
+        - listitem [ref=e140]:
+          - link "Houseboat on the Canals in Amsterdam, Netherlands" [ref=e141] [cursor=pointer]:
+            - /url: /listing/l3
+            - article "Houseboat on the Canals in Amsterdam, Netherlands" [ref=e142]:
+              - generic [ref=e143]:
+                - img "Houseboat on the Canals — Amsterdam, Netherlands" [ref=e144]
+                - generic [ref=e146]:
+                  - generic [ref=e147]: $210
+                  - text: /night
+              - generic [ref=e148]:
+                - heading "Houseboat on the Canals" [level=3] [ref=e149]
+                - paragraph [ref=e150]:
+                  - img [ref=e151]
+                  - text: Amsterdam, Netherlands
+                - generic "Rated 4.78 out of 5 from 203 reviews" [ref=e153]:
+                  - img [ref=e154]
+                  - img [ref=e156]
+                  - img [ref=e158]
+                  - img [ref=e160]
+                  - img [ref=e162]
+                  - generic [ref=e164]: "4.78"
+                  - generic [ref=e165]: (203)
+                - generic [ref=e166]:
+                  - generic [ref=e167]: Entire boat
+                  - generic [ref=e168]: City view
+                  - generic [ref=e169]: Heating
+        - listitem [ref=e170]:
+          - link "Cozy Cabin on a Yacht in Nice, France" [ref=e171] [cursor=pointer]:
+            - /url: /listing/l4
+            - article "Cozy Cabin on a Yacht in Nice, France" [ref=e172]:
+              - generic [ref=e173]:
+                - img "Cozy Cabin on a Yacht — Nice, France" [ref=e174]
+                - generic [ref=e176]:
+                  - generic [ref=e177]: $240
+                  - text: /night
+              - generic [ref=e178]:
+                - heading "Cozy Cabin on a Yacht" [level=3] [ref=e179]
+                - paragraph [ref=e180]:
+                  - img [ref=e181]
+                  - text: Nice, France
+                - generic "Rated 4.85 out of 5 from 156 reviews" [ref=e183]:
+                  - img [ref=e184]
+                  - img [ref=e186]
+                  - img [ref=e188]
+                  - img [ref=e190]
+                  - img [ref=e192]
+                  - generic [ref=e194]: "4.85"
+                  - generic [ref=e195]: (156)
+                - generic [ref=e196]:
+                  - generic [ref=e197]: Private cabin
+                  - generic [ref=e198]: Harbor view
+                  - generic [ref=e199]: Wi‑Fi
+        - listitem [ref=e200]:
+          - link "Lagoon Catamaran Stay in Phuket, Thailand" [ref=e201] [cursor=pointer]:
+            - /url: /listing/l5
+            - article "Lagoon Catamaran Stay in Phuket, Thailand" [ref=e202]:
+              - generic [ref=e203]:
+                - img "Lagoon Catamaran Stay — Phuket, Thailand" [ref=e204]
+                - generic [ref=e206]:
+                  - generic [ref=e207]: $290
+                  - text: /night
+              - generic [ref=e208]:
+                - heading "Lagoon Catamaran Stay" [level=3] [ref=e209]
+                - paragraph [ref=e210]:
+                  - img [ref=e211]
+                  - text: Phuket, Thailand
+                - generic "Rated 4.9 out of 5 from 61 reviews" [ref=e213]:
+                  - img [ref=e214]
+                  - img [ref=e216]
+                  - img [ref=e218]
+                  - img [ref=e220]
+                  - img [ref=e222]
+                  - generic [ref=e224]: "4.90"
+                  - generic [ref=e225]: (61)
+                - generic [ref=e226]:
+                  - generic [ref=e227]: Entire boat
+                  - generic [ref=e228]: Snorkel gear
+                  - generic [ref=e229]: Skipper optional
+        - listitem [ref=e230]:
+          - link "Scandinavian Houseboat Loft in Stockholm, Sweden" [ref=e231] [cursor=pointer]:
+            - /url: /listing/l6
+            - article "Scandinavian Houseboat Loft in Stockholm, Sweden" [ref=e232]:
+              - generic [ref=e233]:
+                - img "Scandinavian Houseboat Loft — Stockholm, Sweden" [ref=e234]
+                - generic [ref=e236]:
+                  - generic [ref=e237]: $175
+                  - text: /night
+              - generic [ref=e238]:
+                - heading "Scandinavian Houseboat Loft" [level=3] [ref=e239]
+                - paragraph [ref=e240]:
+                  - img [ref=e241]
+                  - text: Stockholm, Sweden
+                - generic "Rated 4.72 out of 5 from 98 reviews" [ref=e243]:
+                  - img [ref=e244]
+                  - img [ref=e246]
+                  - img [ref=e248]
+                  - img [ref=e250]
+                  - img [ref=e252]
+                  - generic [ref=e254]: "4.72"
+                  - generic [ref=e255]: (98)
+                - generic [ref=e256]:
+                  - generic [ref=e257]: Entire boat
+                  - generic [ref=e258]: Sauna nearby
+                  - generic [ref=e259]: Kitchenette
+        - listitem [ref=e260]:
+          - link "Blue Lagoon Motor Yacht in Valletta, Malta" [ref=e261] [cursor=pointer]:
+            - /url: /listing/l7
+            - article "Blue Lagoon Motor Yacht in Valletta, Malta" [ref=e262]:
+              - generic [ref=e263]:
+                - img "Blue Lagoon Motor Yacht — Valletta, Malta" [ref=e264]
+                - generic [ref=e266]:
+                  - generic [ref=e267]: $350
+                  - text: /night
+              - generic [ref=e268]:
+                - heading "Blue Lagoon Motor Yacht" [level=3] [ref=e269]
+                - paragraph [ref=e270]:
+                  - img [ref=e271]
+                  - text: Valletta, Malta
+                - generic "Rated 4.95 out of 5 from 44 reviews" [ref=e273]:
+                  - img [ref=e274]
+                  - img [ref=e276]
+                  - img [ref=e278]
+                  - img [ref=e280]
+                  - img [ref=e282]
+                  - generic [ref=e284]: "4.95"
+                  - generic [ref=e285]: (44)
+                - generic [ref=e286]:
+                  - generic [ref=e287]: Entire boat
+                  - generic [ref=e288]: Crewed
+                  - generic [ref=e289]: Breakfast
+        - listitem [ref=e290]:
+          - link "Historic River Barge in Paris, France" [ref=e291] [cursor=pointer]:
+            - /url: /listing/l8
+            - article "Historic River Barge in Paris, France" [ref=e292]:
+              - generic [ref=e293]:
+                - img "Historic River Barge — Paris, France" [ref=e294]
+                - generic [ref=e296]:
+                  - generic [ref=e297]: $220
+                  - text: /night
+              - generic [ref=e298]:
+                - heading "Historic River Barge" [level=3] [ref=e299]
+                - paragraph [ref=e300]:
+                  - img [ref=e301]
+                  - text: Paris, France
+                - generic "Rated 4.67 out of 5 from 172 reviews" [ref=e303]:
+                  - img [ref=e304]
+                  - img [ref=e306]
+                  - img [ref=e308]
+                  - img [ref=e310]
+                  - img [ref=e312]
+                  - generic [ref=e314]: "4.67"
+                  - generic [ref=e315]: (172)
+                - generic [ref=e316]:
+                  - generic [ref=e317]: Entire boat
+                  - generic [ref=e318]: City view
+                  - generic [ref=e319]: Romantic
+        - listitem [ref=e320]:
+          - link "Surf Coast Houseboat in Byron Bay, Australia" [ref=e321] [cursor=pointer]:
+            - /url: /listing/l9
+            - article "Surf Coast Houseboat in Byron Bay, Australia" [ref=e322]:
+              - generic [ref=e323]:
+                - img "Surf Coast Houseboat — Byron Bay, Australia" [ref=e324]
+                - generic [ref=e326]:
+                  - generic [ref=e327]: $195
+                  - text: /night
+              - generic [ref=e328]:
+                - heading "Surf Coast Houseboat" [level=3] [ref=e329]
+                - paragraph [ref=e330]:
+                  - img [ref=e331]
+                  - text: Byron Bay, Australia
+                - generic "Rated 4.74 out of 5 from 88 reviews" [ref=e333]:
+                  - img [ref=e334]
+                  - img [ref=e336]
+                  - img [ref=e338]
+                  - img [ref=e340]
+                  - img [ref=e342]
+                  - generic [ref=e344]: "4.74"
+                  - generic [ref=e345]: (88)
+                - generic [ref=e346]:
+                  - generic [ref=e347]: Private cabin
+                  - generic [ref=e348]: Wi‑Fi
+                  - generic [ref=e349]: Beach access
+        - listitem [ref=e350]:
+          - link "Nordic Fjord Cabin in Bergen, Norway" [ref=e351] [cursor=pointer]:
+            - /url: /listing/l10
+            - article "Nordic Fjord Cabin in Bergen, Norway" [ref=e352]:
+              - generic [ref=e353]:
+                - img "Nordic Fjord Cabin — Bergen, Norway" [ref=e354]
+                - generic [ref=e356]:
+                  - generic [ref=e357]: $205
+                  - text: /night
+              - generic [ref=e358]:
+                - heading "Nordic Fjord Cabin" [level=3] [ref=e359]
+                - paragraph [ref=e360]:
+                  - img [ref=e361]
+                  - text: Bergen, Norway
+                - generic "Rated 4.81 out of 5 from 66 reviews" [ref=e363]:
+                  - img [ref=e364]
+                  - img [ref=e366]
+                  - img [ref=e368]
+                  - img [ref=e370]
+                  - img [ref=e372]
+                  - generic [ref=e374]: "4.81"
+                  - generic [ref=e375]: (66)
+                - generic [ref=e376]:
+                  - generic [ref=e377]: Private cabin
+                  - generic [ref=e378]: Mountain view
+                  - generic [ref=e379]: Heated
+  - contentinfo [ref=e380]:
+    - generic [ref=e381]:
+      - generic [ref=e382]:
+        - generic [ref=e383]:
+          - img [ref=e385]
+          - generic [ref=e388]: WaterBnB
+        - paragraph [ref=e389]: Boat-based stays across the world. Find your next adventure on the water.
+      - navigation "Footer" [ref=e390]:
+        - list [ref=e391]:
+          - listitem [ref=e392]:
+            - link "About" [ref=e393] [cursor=pointer]:
+              - /url: "#about"
+          - listitem [ref=e394]:
+            - link "Careers" [ref=e395] [cursor=pointer]:
+              - /url: "#careers"
+          - listitem [ref=e396]:
+            - link "Help" [ref=e397] [cursor=pointer]:
+              - /url: "#help"
+          - listitem [ref=e398]:
+            - link "Terms" [ref=e399] [cursor=pointer]:
+              - /url: "#terms"
+          - listitem [ref=e400]:
+            - link "Privacy" [ref=e401] [cursor=pointer]:
+              - /url: "#privacy"
+          - listitem [ref=e402]:
+            - link "Contact" [ref=e403] [cursor=pointer]:
+              - /url: "#contact"
+      - paragraph [ref=e404]: © 2026 WaterBnB. All rights reserved.

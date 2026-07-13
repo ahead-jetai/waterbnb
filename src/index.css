@@ -7,32 +7,54 @@
   :root {
     --focus-ring: theme(colors.ring);
   }
+  html {
+    scroll-behavior: smooth;
+  }
   html, body, #root {
     height: 100%;
   }
   body {
-    @apply bg-background text-slate-900 antialiased;
+    @apply bg-background text-slate-900 antialiased font-sans;
   }
   a {
     @apply text-brand hover:text-brand-light underline-offset-4;
+  }
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-brand/20 rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-brand/40;
   }
 }
 
 /* Reusable component classes */
 @layer components {
   .btn {
-    @apply inline-flex items-center justify-center rounded-lg px-4 py-2 font-medium shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--focus-ring)];
+    @apply inline-flex items-center justify-center rounded-lg px-4 py-2.5 font-medium shadow-sm transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--focus-ring)] active:scale-[0.98];
   }
   .btn-primary {
     @apply bg-brand text-white hover:bg-brand-dark;
   }
   .btn-secondary {
-    @apply bg-white text-brand border border-brand/20 hover:bg-brand/5;
+    @apply bg-white text-brand border border-brand/20 hover:bg-brand/5 hover:border-brand/30;
   }
   .container-p {
     @apply mx-auto max-w-7xl px-4 sm:px-6 lg:px-8;
   }
   .card {
     @apply bg-white rounded-xl shadow-card ring-1 ring-black/5;
+  }
+  .input {
+    @apply w-full px-4 py-2.5 border border-slate-200 rounded-lg bg-white
+           text-slate-900 placeholder-slate-400
+           focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand/40
+           transition-colors duration-150;
   }
 }

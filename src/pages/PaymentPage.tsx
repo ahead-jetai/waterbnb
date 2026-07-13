@@ -1,7 +1,8 @@
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useState, useEffect } from 'react'
-import { BookingData, PaymentDetails } from '../types'
+import type { BookingData, PaymentDetails } from '../bookingTypes'
 import { listings } from '../data/listings'
+import { BookingProgress } from '../components/booking'
 
 export default function PaymentPage() {
   const { listingId } = useParams<{ listingId: string }>()
@@ -20,7 +21,6 @@ export default function PaymentPage() {
   useEffect(() => {
     if (location.state && location.state.bookingData) {
       const data = location.state.bookingData
-      // Check if guest details were filled
       if (!data.guestDetails) {
         navigate(`/booking/${listingId}/guest-details`, { state: { bookingData: data } })
         return
@@ -46,26 +46,18 @@ export default function PaymentPage() {
     const { name, value } = e.target
     let formattedValue = value
 
-    // Format card number (16 digits with spaces)
     if (name === 'cardNumber') {
       formattedValue = value.replace(/\s/g, '').replace(/(\d{4})/g, '$1 ').trim()
       if (formattedValue.replace(/\s/g, '').length > 16) return
     }
-
-    // Format expiry date (MM/YY)
     if (name === 'expiryDate') {
       formattedValue = value.replace(/\D/g, '').replace(/(\d{2})(\d)/, '$1/$2').slice(0, 5)
     }
-
-    // Format CVV (3 digits)
     if (name === 'cvv') {
       formattedValue = value.replace(/\D/g, '').slice(0, 3)
     }
 
-    setPaymentDetails(prev => ({
-      ...prev,
-      [name]: formattedValue
-    }))
+    setPaymentDetails(prev => ({ ...prev, [name]: formattedValue }))
   }
 
   const handleAutofill = () => {
@@ -80,62 +72,47 @@ export default function PaymentPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
-    // Validate required fields
     if (!paymentDetails.cardNumber || !paymentDetails.expiryDate || !paymentDetails.cvv || !paymentDetails.nameOnCard) {
       alert('Please fill in all payment fields')
       return
     }
-
-    // Validate card number (16 digits)
-    const cardNumberDigits = paymentDetails.cardNumber.replace(/\s/g, '')
-    if (cardNumberDigits.length !== 16) {
+    if (paymentDetails.cardNumber.replace(/\s/g, '').length !== 16) {
       alert('Please enter a valid 16-digit card number')
       return
     }
-
-    // Validate CVV (3 digits)
     if (paymentDetails.cvv.length !== 3) {
       alert('Please enter a valid 3-digit CVV')
       return
     }
 
-    // Update booking data with payment details
-    const updatedBookingData: BookingData = {
-      ...bookingData,
-      paymentDetails
-    }
-
-    // Generate a booking reference
+    const updatedBookingData: BookingData = { ...bookingData, paymentDetails }
     const bookingReference = 'WB' + Date.now().toString().slice(-8)
 
     navigate(`/booking/${listingId}/confirmation`, {
-      state: {
-        bookingData: updatedBookingData,
-        bookingReference,
-        total
-      }
+      state: { bookingData: updatedBookingData, bookingReference, total }
     })
   }
 
   const handleBack = () => {
-    navigate(`/booking/${listingId}/guest-details`, {
-      state: { bookingData }
-    })
+    navigate(`/booking/${listingId}/guest-details`, { state: { bookingData } })
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto px-4 py-8 max-w-4xl">
-        {/* Header */}
+    <div className="min-h-screen bg-background">
+      <div className="container-p py-8 max-w-4xl">
+        <button
+          onClick={handleBack}
+          className="text-brand hover:text-brand-dark mb-6 flex items-center gap-1.5 text-sm font-medium bg-transparent border-0 cursor-pointer p-0 no-underline"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+          Back
+        </button>
+
         <div className="mb-8">
-          <button
-            onClick={handleBack}
-            className="text-sky-500 hover:text-sky-600 mb-4 flex items-center gap-2"
-          >
-            ← Back
-          </button>
-          <h1 className="text-3xl font-bold mb-2">Payment details</h1>
-          <p className="text-gray-600">Step 3 of 3</p>
+          <BookingProgress currentStep={3} />
+          <h1 className="font-display text-3xl font-medium text-muted text-center">Payment details</h1>
         </div>
 
         <div className="grid md:grid-cols-2 gap-8">
@@ -143,20 +120,20 @@ export default function PaymentPage() {
           <div>
             <form onSubmit={handleSubmit} className="card p-6">
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-semibold">Pay with card</h3>
+                <h3 className="font-semibold text-base">Pay with card</h3>
                 <button
                   type="button"
                   onClick={handleAutofill}
-                  className="text-sm text-sky-500 hover:text-sky-600 font-semibold"
+                  className="text-sm text-brand hover:text-brand-dark font-medium no-underline"
                 >
-                  🔄 Autofill (Testing)
+                  Autofill (Testing)
                 </button>
               </div>
 
-              <div className="space-y-6">
+              <div className="space-y-5">
                 <div>
-                  <label htmlFor="cardNumber" className="block text-sm font-semibold mb-2">
-                    Card number <span className="text-red-500">*</span>
+                  <label htmlFor="cardNumber" className="block text-sm font-medium text-slate-700 mb-1.5">
+                    Card number <span className="text-danger">*</span>
                   </label>
                   <input
                     type="text"
@@ -164,7 +141,7 @@ export default function PaymentPage() {
                     name="cardNumber"
                     value={paymentDetails.cardNumber}
                     onChange={handleInputChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    className="input"
                     placeholder="1234 5678 9012 3456"
                     required
                   />
@@ -172,8 +149,8 @@ export default function PaymentPage() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label htmlFor="expiryDate" className="block text-sm font-semibold mb-2">
-                      Expiry date <span className="text-red-500">*</span>
+                    <label htmlFor="expiryDate" className="block text-sm font-medium text-slate-700 mb-1.5">
+                      Expiry date <span className="text-danger">*</span>
                     </label>
                     <input
                       type="text"
@@ -181,15 +158,14 @@ export default function PaymentPage() {
                       name="expiryDate"
                       value={paymentDetails.expiryDate}
                       onChange={handleInputChange}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                      className="input"
                       placeholder="MM/YY"
                       required
                     />
                   </div>
-
                   <div>
-                    <label htmlFor="cvv" className="block text-sm font-semibold mb-2">
-                      CVV <span className="text-red-500">*</span>
+                    <label htmlFor="cvv" className="block text-sm font-medium text-slate-700 mb-1.5">
+                      CVV <span className="text-danger">*</span>
                     </label>
                     <input
                       type="text"
@@ -197,7 +173,7 @@ export default function PaymentPage() {
                       name="cvv"
                       value={paymentDetails.cvv}
                       onChange={handleInputChange}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                      className="input"
                       placeholder="123"
                       required
                     />
@@ -205,8 +181,8 @@ export default function PaymentPage() {
                 </div>
 
                 <div>
-                  <label htmlFor="nameOnCard" className="block text-sm font-semibold mb-2">
-                    Name on card <span className="text-red-500">*</span>
+                  <label htmlFor="nameOnCard" className="block text-sm font-medium text-slate-700 mb-1.5">
+                    Name on card <span className="text-danger">*</span>
                   </label>
                   <input
                     type="text"
@@ -214,20 +190,20 @@ export default function PaymentPage() {
                     name="nameOnCard"
                     value={paymentDetails.nameOnCard}
                     onChange={handleInputChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    className="input"
                     placeholder="John Doe"
                     required
                   />
                 </div>
 
-                <div className="pt-4">
+                <div className="pt-2">
                   <button type="submit" className="btn btn-primary w-full">
-                    Complete booking - ${total.toFixed(2)}
+                    Complete booking — ${total.toFixed(2)}
                   </button>
                 </div>
 
-                <p className="text-xs text-gray-500 text-center">
-                  This is a demo booking system. Any 16-digit card number will be accepted.
+                <p className="text-xs text-slate-400 text-center">
+                  This is a demo. Any 16-digit card number will be accepted.
                 </p>
               </div>
             </form>
@@ -236,7 +212,7 @@ export default function PaymentPage() {
           {/* Right Column - Booking Summary */}
           <div>
             <div className="card p-6 sticky top-8">
-              <h3 className="text-lg font-semibold mb-4">Booking summary</h3>
+              <h3 className="font-semibold text-base mb-4">Booking summary</h3>
 
               <div className="mb-4">
                 <img
@@ -244,41 +220,39 @@ export default function PaymentPage() {
                   alt={listing.title}
                   className="w-full h-32 object-cover rounded-lg mb-3"
                 />
-                <h4 className="font-semibold">{listing.title}</h4>
-                <p className="text-sm text-gray-600">{listing.location}</p>
+                <h4 className="font-semibold text-sm">{listing.title}</h4>
+                <p className="text-xs text-slate-500 mt-0.5">{listing.location}</p>
               </div>
 
-              <div className="border-t pt-4 space-y-2 mb-4">
-                <div className="text-sm">
-                  <span className="text-gray-600">Check-in:</span>{' '}
-                  <span className="font-semibold">
+              <div className="border-t border-slate-100 pt-4 space-y-2 mb-4 text-sm">
+                <div>
+                  <span className="text-slate-500">Check-in: </span>
+                  <span className="font-medium">
                     {checkInDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                   </span>
                 </div>
-                <div className="text-sm">
-                  <span className="text-gray-600">Check-out:</span>{' '}
-                  <span className="font-semibold">
+                <div>
+                  <span className="text-slate-500">Check-out: </span>
+                  <span className="font-medium">
                     {checkOutDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                   </span>
                 </div>
-                <div className="text-sm">
-                  <span className="text-gray-600">Guests:</span>{' '}
-                  <span className="font-semibold">{bookingData.guests}</span>
+                <div>
+                  <span className="text-slate-500">Guests: </span>
+                  <span className="font-medium">{bookingData.guests}</span>
                 </div>
               </div>
 
-              <div className="border-t pt-4 space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-700">
-                    ${listing.pricePerNight.toFixed(2)} × {nights} nights
-                  </span>
+              <div className="border-t border-slate-100 pt-4 space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">${listing.pricePerNight.toFixed(2)} × {nights} nights</span>
                   <span>${subtotal.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-700">Service fee</span>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Service fee</span>
                   <span>${serviceFee.toFixed(2)}</span>
                 </div>
-                <div className="border-t pt-2 flex justify-between font-bold">
+                <div className="border-t border-slate-100 pt-2 flex justify-between font-semibold">
                   <span>Total (USD)</span>
                   <span>${total.toFixed(2)}</span>
                 </div>
