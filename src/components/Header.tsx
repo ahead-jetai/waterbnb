@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
+import { SignedIn, SignedOut, UserButton } from '@clerk/clerk-react'
 
 export default function Header() {
   const [open, setOpen] = useState(false)
@@ -39,10 +40,15 @@ export default function Header() {
             Host a Boat
           </Link>
         </nav>
-        <div className="hidden md:block">
-          <a href="#get-started" className="btn btn-primary no-underline" aria-label="Get started">
-            Get Started
-          </a>
+        <div className="hidden md:flex items-center gap-3">
+          <SignedOut>
+            <Link to="/sign-in" className="btn btn-primary no-underline" aria-label="Sign in">
+              Sign in
+            </Link>
+          </SignedOut>
+          <SignedIn>
+            <UserButton afterSignOutUrl="/" />
+          </SignedIn>
         </div>
         <button
           className="md:hidden inline-flex items-center justify-center rounded-md p-2 text-muted hover:text-brand focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors"
@@ -68,7 +74,17 @@ export default function Header() {
             <a className="py-1.5 text-slate-700 hover:text-brand no-underline" href="#explore">Explore</a>
             <Link className="py-1.5 text-slate-700 hover:text-brand no-underline" to="/host">Host a Boat</Link>
             <a className="py-1.5 text-slate-700 hover:text-brand no-underline" href="#about">About</a>
-            <a className="btn btn-primary w-full mt-2 no-underline" href="#get-started">Get Started</a>
+            <SignedOut>
+              <Link className="btn btn-primary w-full mt-2 no-underline" to="/sign-in" onClick={() => setOpen(false)}>
+                Sign in
+              </Link>
+            </SignedOut>
+            <SignedIn>
+              <div className="flex items-center gap-3 mt-2">
+                <UserButton afterSignOutUrl="/" />
+                <span className="text-sm text-slate-600">My account</span>
+              </div>
+            </SignedIn>
           </div>
         </div>
       )}

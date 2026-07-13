@@ -1,5 +1,6 @@
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useState, useEffect } from 'react'
+import { useUser } from '@clerk/clerk-react'
 import type { BookingData, GuestDetails } from '../bookingTypes'
 import { BookingProgress } from '../components/booking'
 
@@ -7,13 +8,14 @@ export default function GuestDetailsPage() {
   const { listingId } = useParams<{ listingId: string }>()
   const location = useLocation()
   const navigate = useNavigate()
+  const { user } = useUser()
   const [bookingData, setBookingData] = useState<BookingData | null>(null)
-  const [guestDetails, setGuestDetails] = useState<GuestDetails>({
-    name: '',
+  const [guestDetails, setGuestDetails] = useState<GuestDetails>(() => ({
+    name: user ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() : '',
     email: '',
-    phone: '',
+    phone: user?.primaryPhoneNumber?.phoneNumber ?? '',
     specialRequests: ''
-  })
+  }))
 
   useEffect(() => {
     if (location.state && location.state.bookingData) {
