@@ -1,6 +1,12 @@
+import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 
-export default function Hero() {
+interface HeroProps {
+  /** Override the call-to-action buttons (defaults to explore/host links). */
+  ctas?: ReactNode
+}
+
+export default function Hero({ ctas }: HeroProps) {
   return (
     <section className="relative isolate" aria-label="Hero section">
       <div className="absolute inset-0 -z-10">
@@ -25,8 +31,12 @@ export default function Hero() {
           From harbor hideaways to open-sea escapes.
         </p>
         <div className="mt-8 flex flex-wrap gap-3 [animation-delay:0.3s] animate-fade-up">
-          <a href="#explore" className="btn btn-primary no-underline" aria-label="Explore listings">Explore Listings</a>
-          <Link to="/host" className="btn btn-secondary no-underline" aria-label="Become a host">Become a Host</Link>
+          {ctas ?? (
+            <>
+              <a href="#explore" className="btn btn-primary no-underline" aria-label="Explore listings">Explore Listings</a>
+              <Link to="/host" className="btn btn-secondary no-underline" aria-label="Become a host">Become a Host</Link>
+            </>
+          )}
         </div>
       </div>
 

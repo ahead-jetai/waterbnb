@@ -10,6 +10,7 @@ import PaymentPage from './pages/PaymentPage'
 import BookingConfirmationPage from './pages/BookingConfirmationPage'
 import HostLandingPage from './pages/HostLandingPage'
 import HostListingPage from './pages/HostListingPage'
+import HostingHomePage from './pages/HostingHomePage'
 import SignInPage from './pages/SignInPage'
 import SignUpPage from './pages/SignUpPage'
 
@@ -19,14 +20,16 @@ export default function App() {
       <div className="min-h-full flex flex-col">
         <Header />
         <Routes>
-          {/* Public routes */}
+          {/* Public routes — everything else requires sign-in */}
           <Route path="/" element={<HomePage />} />
-          <Route path="/listing/:id" element={<ListingDetailPage />} />
-          <Route path="/host" element={<HostLandingPage />} />
           <Route path="/sign-in" element={<SignInPage />} />
           <Route path="/sign-up" element={<SignUpPage />} />
 
-          {/* Protected routes */}
+          {/* Traveler routes */}
+          <Route
+            path="/listing/:id"
+            element={<ProtectedRoute><ListingDetailPage /></ProtectedRoute>}
+          />
           <Route
             path="/booking/:listingId/review"
             element={<ProtectedRoute><BookingReviewPage /></ProtectedRoute>}
@@ -42,6 +45,16 @@ export default function App() {
           <Route
             path="/booking/:listingId/confirmation"
             element={<ProtectedRoute><BookingConfirmationPage /></ProtectedRoute>}
+          />
+
+          {/* Hosting routes */}
+          <Route
+            path="/hosting"
+            element={<ProtectedRoute><HostingHomePage /></ProtectedRoute>}
+          />
+          <Route
+            path="/host"
+            element={<ProtectedRoute><HostLandingPage /></ProtectedRoute>}
           />
           <Route
             path="/host/list"

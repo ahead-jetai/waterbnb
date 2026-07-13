@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { useAuth } from '@clerk/clerk-react'
-import { Navigate, useLocation } from 'react-router-dom'
+import { Navigate } from 'react-router-dom'
 
 interface ProtectedRouteProps {
   children: ReactNode
@@ -8,7 +8,6 @@ interface ProtectedRouteProps {
 
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { isSignedIn, isLoaded } = useAuth()
-  const location = useLocation()
 
   if (!isLoaded) {
     return (
@@ -19,13 +18,9 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   }
 
   if (!isSignedIn) {
-    return (
-      <Navigate
-        to="/sign-in"
-        state={{ returnTo: location.pathname + location.search }}
-        replace
-      />
-    )
+    // Signed-out visitors land on the home page, which carries the
+    // register / sign-in calls to action.
+    return <Navigate to="/" replace />
   }
 
   return <>{children}</>

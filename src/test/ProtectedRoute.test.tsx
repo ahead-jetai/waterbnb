@@ -29,7 +29,7 @@ function renderWithRouter(isSignedIn: boolean, isLoaded: boolean) {
             </ProtectedRoute>
           }
         />
-        <Route path="/sign-in" element={<div>Sign In Page</div>} />
+        <Route path="/" element={<div>Home Page</div>} />
       </Routes>
     </MemoryRouter>
   )
@@ -42,15 +42,15 @@ describe('ProtectedRoute', () => {
     expect(screen.queryByText('Protected Content')).not.toBeInTheDocument()
   })
 
-  it('redirects unauthenticated users to /sign-in', () => {
+  it('redirects unauthenticated users to the home page', () => {
     renderWithRouter(false, true)
-    expect(screen.getByText('Sign In Page')).toBeInTheDocument()
+    expect(screen.getByText('Home Page')).toBeInTheDocument()
     expect(screen.queryByText('Protected Content')).not.toBeInTheDocument()
   })
 
   it('renders children when the user is authenticated', () => {
     renderWithRouter(true, true)
     expect(screen.getByText('Protected Content')).toBeInTheDocument()
-    expect(screen.queryByText('Sign In Page')).not.toBeInTheDocument()
+    expect(screen.queryByText('Home Page')).not.toBeInTheDocument()
   })
 })
