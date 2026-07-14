@@ -45,12 +45,6 @@ export async function fetchConnectStatus(hostId: string): Promise<ConnectStatus>
   return invoke<ConnectStatus>('connect-status', { hostId })
 }
 
-/** Create the platform Stripe product for a listing. */
-export async function createListingProduct(listingId: string): Promise<string> {
-  const { productId } = await invoke<{ productId: string }>('create-product', { listingId })
-  return productId
-}
-
 /** Start hosted Checkout; resolves to the Stripe-hosted payment page URL. */
 export async function startCheckout(input: {
   listingId: string

@@ -5,11 +5,8 @@ import {
   createConnectAccount,
   createOnboardingLink,
   fetchConnectStatus,
-  createListingProduct,
   type ConnectStatus,
 } from '../utils/paymentsApi'
-import { fetchHostListings } from '../utils/listingsApi'
-import type { Listing } from '../bookingTypes'
 
 function StatusPill({ ok, okLabel, pendingLabel }: { ok: boolean; okLabel: string; pendingLabel: string }) {
   return (
@@ -27,18 +24,14 @@ function StatusPill({ ok, okLabel, pendingLabel }: { ok: boolean; okLabel: strin
 export default function HostPaymentsPage() {
   const { user } = useUser()
   const [status, setStatus] = useState<ConnectStatus | null>(null)
-  const [listings, setListings] = useState<Listing[]>([])
   const [loading, setLoading] = useState(true)
   const [working, setWorking] = useState(false)
   const [error, setError] = useState('')
-  const [productBusy, setProductBusy] = useState<string | null>(null)
-  const [productDone, setProductDone] = useState<Set<string>>(new Set())
 
   const refresh = useCallback(async (userId: string) => {
     try {
-      const [s, ls] = await Promise.all([fetchConnectStatus(userId), fetchHostListings(userId)])
+      const s = await fetchConnectStatus(userId)
       setStatus(s)
-      setListings(ls)
       setError('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not reach the payments service.')
@@ -69,19 +62,6 @@ export default function HostPaymentsPage() {
     }
   }
 
-  const handleCreateProduct = async (listingId: string) => {
-    setProductBusy(listingId)
-    setError('')
-    try {
-      await createListingProduct(listingId)
-      setProductDone(prev => new Set(prev).add(listingId))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create the Stripe product.')
-    } finally {
-      setProductBusy(null)
-    }
-  }
-
   const ready = status?.hasAccount && status.readyToReceivePayments && status.onboardingComplete
 
   return (
@@ -108,7 +88,7 @@ export default function HostPaymentsPage() {
         ) : (
           <>
             {/* Onboarding card */}
-            <div className="card p-6 mb-8">
+            <div className="card p-6">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h2 className="font-semibold text-base mb-1">Stripe account</h2>
@@ -161,44 +141,6 @@ export default function HostPaymentsPage() {
                   </button>
                 )}
               </div>
-            </div>
-
-            {/* Products card */}
-            <div className="card p-6">
-              <h2 className="font-semibold text-base mb-1">Listing products</h2>
-              <p className="text-sm text-slate-500 mb-4">
-                Each listing is sold through a Stripe product. Products are created
-                automatically at first checkout, or you can create them ahead of time.
-              </p>
-              {listings.length === 0 ? (
-                <p className="text-sm text-slate-400">
-                  No listings yet — <Link to="/host/list" className="text-brand no-underline">create one</Link> first.
-                </p>
-              ) : (
-                <ul className="divide-y divide-slate-100">
-                  {listings.map(l => (
-                    <li key={l.id} className="py-3 flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-medium text-slate-900 truncate">{l.title}</p>
-                        <p className="text-xs text-slate-400">${l.pricePerNight}/night</p>
-                      </div>
-                      {productDone.has(l.id) ? (
-                        <span className="text-xs font-medium text-accent-dark bg-accent/10 rounded-full px-2.5 py-1 flex-shrink-0">
-                          Product ready
-                        </span>
-                      ) : (
-                        <button
-                          onClick={() => handleCreateProduct(l.id)}
-                          disabled={productBusy === l.id}
-                          className="btn btn-secondary text-sm py-1.5 px-4 flex-shrink-0"
-                        >
-                          {productBusy === l.id ? 'Creating…' : 'Create Stripe product'}
-                        </button>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
             </div>
           </>
         )}
