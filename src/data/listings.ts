@@ -1,8 +1,5 @@
 import type { Listing } from '../bookingTypes'
 
-// Unsplash placeholders themed around boats/sea
-const img = (id: number) => `https://images.unsplash.com/photo-15${80 + id}0${id}-boats?auto=format&fit=crop&w=1200&q=60`
-
 export const listings: Listing[] = [
   {
     id: 'l1',

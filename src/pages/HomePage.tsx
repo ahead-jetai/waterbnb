@@ -1,10 +1,13 @@
+import { useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { useAuth, useUser } from '@clerk/clerk-react'
 import Hero from '../components/Hero'
 import Carousel from '../components/Carousel'
 import ListingCard from '../components/ListingCard'
-import { listings } from '../data/listings'
+import { listings as mockListings } from '../data/listings'
+import { fetchListings } from '../utils/listingsApi'
 import { useUserMode } from '../hooks/useUserMode'
+import type { Listing } from '../bookingTypes'
 
 const carouselSlides = [
   {
@@ -66,6 +69,13 @@ function GuestLanding() {
 function TravelerHome() {
   const { user } = useUser()
   const firstName = user?.firstName
+  const [listings, setListings] = useState<Listing[]>(mockListings)
+
+  useEffect(() => {
+    let cancelled = false
+    fetchListings().then(all => { if (!cancelled) setListings(all) })
+    return () => { cancelled = true }
+  }, [])
 
   return (
     <main>

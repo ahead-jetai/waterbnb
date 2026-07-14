@@ -1,16 +1,96 @@
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { useState } from 'react';
-import { listings } from '../data/listings';
+import { useState, useEffect } from 'react';
+import { useUser } from '@clerk/clerk-react';
+import { fetchListing } from '../utils/listingsApi';
 import StarRating from '../components/StarRating';
-import type { BookingData } from '../bookingTypes';
+import type { BookingData, Listing } from '../bookingTypes';
+
+function PhotoGallery({ listing }: { listing: Listing }) {
+  const photos = listing.images?.length ? listing.images : [listing.image];
+  const [index, setIndex] = useState(0);
+
+  return (
+    <div className="mb-6">
+      <div className="relative aspect-[16/9] bg-slate-100 overflow-hidden rounded-xl">
+        <img
+          src={photos[index]}
+          alt={`${listing.title} — photo ${index + 1} of ${photos.length}`}
+          className="w-full h-full object-cover"
+        />
+        {photos.length > 1 && (
+          <>
+            <button
+              onClick={() => setIndex(i => (i - 1 + photos.length) % photos.length)}
+              aria-label="Previous photo"
+              className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-2 text-muted shadow hover:bg-white cursor-pointer"
+            >
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 4 6 10l6 6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+            <button
+              onClick={() => setIndex(i => (i + 1) % photos.length)}
+              aria-label="Next photo"
+              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-2 text-muted shadow hover:bg-white cursor-pointer"
+            >
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M8 4l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+            <span className="absolute bottom-3 right-3 text-xs font-medium bg-black/60 text-white rounded-full px-2.5 py-1">
+              {index + 1} / {photos.length}
+            </span>
+          </>
+        )}
+      </div>
+      {photos.length > 1 && (
+        <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+          {photos.map((p, i) => (
+            <button
+              key={p}
+              onClick={() => setIndex(i)}
+              aria-label={`View photo ${i + 1}`}
+              className={`w-20 h-14 rounded-lg overflow-hidden flex-shrink-0 border-2 transition-all cursor-pointer
+                ${i === index ? 'border-brand' : 'border-transparent opacity-70 hover:opacity-100'}`}
+            >
+              <img src={p} alt="" className="w-full h-full object-cover" />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function ListingDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const listing = listings.find(l => l.id === id);
+  const { user } = useUser();
+  const [listing, setListing] = useState<Listing | null>(null);
+  const [loading, setLoading] = useState(true);
   const [checkIn, setCheckIn] = useState('');
   const [checkOut, setCheckOut] = useState('');
   const [guests, setGuests] = useState(1);
+
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    fetchListing(id).then(l => {
+      if (!cancelled) {
+        setListing(l);
+        setLoading(false);
+      }
+    });
+    return () => { cancelled = true };
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="container-p py-16 flex items-center justify-center">
+        <div className="animate-pulse text-slate-400 text-sm">Loading listing…</div>
+      </div>
+    );
+  }
 
   if (!listing) {
     return (
@@ -52,25 +132,24 @@ export default function ListingDetailPage() {
   return (
     <div className="container-p py-8">
       {/* Breadcrumb */}
-      <nav className="mb-6">
+      <nav className="mb-6 flex items-center justify-between">
         <Link to="/" className="text-brand hover:text-brand-dark no-underline inline-flex items-center gap-1.5 text-sm font-medium">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
           </svg>
           Back to listings
         </Link>
+        {listing.hostId && user?.id === listing.hostId && (
+          <Link to={`/host/list/${listing.id}/edit`} className="btn btn-secondary no-underline text-sm py-1.5 px-4">
+            Edit listing
+          </Link>
+        )}
       </nav>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left Column */}
         <div className="lg:col-span-2">
-          <div className="aspect-[16/9] bg-slate-100 overflow-hidden rounded-xl mb-6">
-            <img
-              src={listing.image}
-              alt={`${listing.title} — ${listing.location}`}
-              className="w-full h-full object-cover"
-            />
-          </div>
+          <PhotoGallery listing={listing} />
 
           <div className="mb-6">
             <h1 className="font-display text-3xl sm:text-4xl font-medium text-muted mb-2">{listing.title}</h1>
@@ -100,10 +179,10 @@ export default function ListingDetailPage() {
           <div className="mb-6">
             <h2 className="font-display text-xl font-medium text-muted mb-3">About this listing</h2>
             <p className="text-slate-600 leading-relaxed">
-              Experience the unique charm of staying on the water in {listing.location}.
-              This {listing.title.toLowerCase()} offers a one-of-a-kind accommodation that
+              {listing.description || `Experience the unique charm of staying on the water in ${listing.location}.
+              This ${listing.title.toLowerCase()} offers a one-of-a-kind accommodation that
               combines comfort with adventure. Perfect for travelers looking for something
-              different from traditional hotels.
+              different from traditional hotels.`}
             </p>
           </div>
 

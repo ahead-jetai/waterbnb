@@ -60,6 +60,10 @@ export default function App() {
             path="/host/list"
             element={<ProtectedRoute><HostListingPage /></ProtectedRoute>}
           />
+          <Route
+            path="/host/list/:id/edit"
+            element={<ProtectedRoute><HostListingPage /></ProtectedRoute>}
+          />
         </Routes>
         <Footer />
       </div>

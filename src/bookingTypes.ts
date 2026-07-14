@@ -6,7 +6,12 @@ export type Listing = {
   rating: number // 0..5
   reviews: number
   image: string
+  images?: string[] // all photos; `image` is the cover (first photo)
   tags: string[]
+  description?: string
+  capacity?: number
+  boatType?: string
+  hostId?: string
 }
 
 export type BookingDates = {
