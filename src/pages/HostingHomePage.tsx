@@ -95,10 +95,13 @@ export default function HostingHomePage() {
                       ${l.pricePerNight}<span className="text-xs text-slate-400 font-sans">/night</span>
                     </p>
                     <div className="mt-3 flex gap-2">
-                      <Link to={`/host/list/${l.id}/edit`} className="btn btn-secondary no-underline text-sm py-1.5 px-4 flex-1 text-center">
+                      <Link to={`/host/list/${l.id}/edit`} className="btn btn-secondary no-underline text-sm py-1.5 px-3 flex-1 text-center">
                         Edit
                       </Link>
-                      <Link to={`/listing/${l.id}`} className="btn btn-primary no-underline text-sm py-1.5 px-4 flex-1 text-center">
+                      <Link to={`/host/list/${l.id}/availability`} className="btn btn-secondary no-underline text-sm py-1.5 px-3 flex-1 text-center">
+                        Calendar
+                      </Link>
+                      <Link to={`/listing/${l.id}`} className="btn btn-primary no-underline text-sm py-1.5 px-3 flex-1 text-center">
                         View
                       </Link>
                     </div>

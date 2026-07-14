@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { fetchBlockedRanges } from './availabilityApi'
 import type { Booking, BookingStatus, GuestDetails, Listing } from '../bookingTypes'
 
 export type CreateBookingInput = {
@@ -110,17 +111,36 @@ export function rangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd
   return new Date(aStart) < new Date(bEnd) && new Date(bStart) < new Date(aEnd)
 }
 
-/** True if the requested date range doesn't overlap any confirmed booking for the listing. */
+export type UnavailableRange = {
+  checkIn: string
+  checkOut: string
+  source: 'booking' | 'host'
+}
+
+/** All dates a guest cannot book: confirmed bookings plus host-blocked ranges, soonest first. */
+export async function fetchUnavailableRanges(listingId: string): Promise<UnavailableRange[]> {
+  const [booked, blocked] = await Promise.all([
+    fetchBookedDateRanges(listingId),
+    fetchBlockedRanges(listingId),
+  ])
+  const ranges: UnavailableRange[] = [
+    ...booked.map(r => ({ ...r, source: 'booking' as const })),
+    ...blocked.map(r => ({ checkIn: r.startDate, checkOut: r.endDate, source: 'host' as const })),
+  ]
+  return ranges.sort((a, b) => a.checkIn.localeCompare(b.checkIn))
+}
+
+/** True if the requested date range doesn't overlap any confirmed booking or host-blocked range for the listing. */
 export async function isRangeAvailable(listingId: string, checkIn: string, checkOut: string): Promise<boolean> {
-  const booked = await fetchBookedDateRanges(listingId)
-  return !booked.some(b => rangesOverlap(checkIn, checkOut, b.checkIn, b.checkOut))
+  const unavailable = await fetchUnavailableRanges(listingId)
+  return !unavailable.some(b => rangesOverlap(checkIn, checkOut, b.checkIn, b.checkOut))
 }
 
 export async function createBooking(input: CreateBookingInput): Promise<Booking> {
   // Re-check availability right before insert to close the race between selecting dates and paying.
   const available = await isRangeAvailable(input.listingId, input.checkIn, input.checkOut)
   if (!available) {
-    throw new Error('Sorry, those dates were just booked by someone else. Please choose different dates.')
+    throw new Error('Sorry, those dates are no longer available. Please choose different dates.')
   }
 
   const { data, error } = await supabase

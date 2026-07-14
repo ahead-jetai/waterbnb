@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 import { listings as mockListings } from '../data/listings'
 import { fetchUnavailableListingIds } from './bookingsApi'
+import { fetchHostBlockedListingIds } from './availabilityApi'
 import type { Listing } from '../bookingTypes'
 
 export type ListingFilters = {
@@ -92,8 +93,11 @@ export async function fetchListings(filters?: ListingFilters): Promise<Listing[]
   let result = (data as ListingRow[]).map(rowToListing)
 
   if (filters?.checkIn && filters?.checkOut) {
-    const unavailable = await fetchUnavailableListingIds(filters.checkIn, filters.checkOut)
-    result = result.filter(l => !unavailable.has(l.id))
+    const [booked, hostBlocked] = await Promise.all([
+      fetchUnavailableListingIds(filters.checkIn, filters.checkOut),
+      fetchHostBlockedListingIds(filters.checkIn, filters.checkOut),
+    ])
+    result = result.filter(l => !booked.has(l.id) && !hostBlocked.has(l.id))
   }
 
   return result

@@ -9,6 +9,7 @@ import GuestDetailsPage from './pages/GuestDetailsPage'
 import PaymentPage from './pages/PaymentPage'
 import BookingConfirmationPage from './pages/BookingConfirmationPage'
 import TripsPage from './pages/TripsPage'
+import HostAvailabilityPage from './pages/HostAvailabilityPage'
 import HostLandingPage from './pages/HostLandingPage'
 import HostListingPage from './pages/HostListingPage'
 import HostingHomePage from './pages/HostingHomePage'
@@ -68,6 +69,10 @@ export default function App() {
           <Route
             path="/host/list/:id/edit"
             element={<ProtectedRoute><HostListingPage /></ProtectedRoute>}
+          />
+          <Route
+            path="/host/list/:id/availability"
+            element={<ProtectedRoute><HostAvailabilityPage /></ProtectedRoute>}
           />
         </Routes>
         <Footer />

@@ -2,7 +2,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { useUser } from '@clerk/clerk-react';
 import { fetchListing } from '../utils/listingsApi';
-import { fetchBookedDateRanges, rangesOverlap } from '../utils/bookingsApi';
+import { fetchUnavailableRanges, rangesOverlap, type UnavailableRange } from '../utils/bookingsApi';
 import StarRating from '../components/StarRating';
 import type { BookingData, Listing } from '../bookingTypes';
 
@@ -72,7 +72,7 @@ export default function ListingDetailPage() {
   const [checkIn, setCheckIn] = useState('');
   const [checkOut, setCheckOut] = useState('');
   const [guests, setGuests] = useState(1);
-  const [bookedRanges, setBookedRanges] = useState<{ checkIn: string; checkOut: string }[]>([]);
+  const [bookedRanges, setBookedRanges] = useState<UnavailableRange[]>([]);
   const [dateError, setDateError] = useState('');
 
   useEffect(() => {
@@ -84,7 +84,7 @@ export default function ListingDetailPage() {
         setLoading(false);
       }
     });
-    fetchBookedDateRanges(id).then(ranges => {
+    fetchUnavailableRanges(id).then(ranges => {
       if (!cancelled) setBookedRanges(ranges);
     });
     return () => { cancelled = true };
@@ -132,7 +132,7 @@ export default function ListingDetailPage() {
 
     const overlapping = bookedRanges.some(r => rangesOverlap(checkIn, checkOut, r.checkIn, r.checkOut));
     if (overlapping) {
-      setDateError('Those dates overlap an existing booking for this listing. Please choose different dates.');
+      setDateError('Those dates are unavailable for this listing. Please choose different dates.');
       return;
     }
 
