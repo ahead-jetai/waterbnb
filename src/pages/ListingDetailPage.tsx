@@ -3,8 +3,39 @@ import { useState, useEffect } from 'react';
 import { useUser } from '@clerk/clerk-react';
 import { fetchListing } from '../utils/listingsApi';
 import { fetchUnavailableRanges, rangesOverlap, type UnavailableRange } from '../utils/bookingsApi';
+import { fetchHostProfile, type HostProfile } from '../utils/hostProfilesApi';
 import StarRating from '../components/StarRating';
 import type { BookingData, Listing } from '../bookingTypes';
+
+/** Clickable host byline that lands on the host's public profile page. */
+function HostCard({ hostId, profile }: { hostId: string; profile: HostProfile | null }) {
+  const name = profile?.name || 'WaterBnB host';
+  return (
+    <Link
+      to={`/hosts/${hostId}`}
+      className="flex items-center gap-3 no-underline group border-t border-slate-100 pt-6 mt-6"
+      aria-label={`View ${name}'s profile and listings`}
+    >
+      {profile?.avatarUrl ? (
+        <img
+          src={profile.avatarUrl}
+          alt=""
+          className="w-12 h-12 rounded-full object-cover ring-2 ring-brand/20 group-hover:ring-brand/50 transition-shadow flex-shrink-0"
+        />
+      ) : (
+        <span className="inline-flex w-12 h-12 rounded-full bg-brand/10 text-brand items-center justify-center font-display text-lg flex-shrink-0">
+          {name.charAt(0).toUpperCase()}
+        </span>
+      )}
+      <span>
+        <span className="block font-semibold text-slate-900 group-hover:text-brand transition-colors">
+          Hosted by {name}
+        </span>
+        <span className="block text-sm text-slate-500 mt-0.5">View profile and all listings</span>
+      </span>
+    </Link>
+  );
+}
 
 function PhotoGallery({ listing }: { listing: Listing }) {
   const photos = listing.images?.length ? listing.images : [listing.image];
@@ -74,6 +105,7 @@ export default function ListingDetailPage() {
   const [guests, setGuests] = useState(1);
   const [bookedRanges, setBookedRanges] = useState<UnavailableRange[]>([]);
   const [dateError, setDateError] = useState('');
+  const [hostProfile, setHostProfile] = useState<HostProfile | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -82,6 +114,9 @@ export default function ListingDetailPage() {
       if (!cancelled) {
         setListing(l);
         setLoading(false);
+        if (l?.hostId) {
+          fetchHostProfile(l.hostId).then(p => { if (!cancelled) setHostProfile(p) });
+        }
       }
     });
     fetchUnavailableRanges(id).then(ranges => {
@@ -201,6 +236,12 @@ export default function ListingDetailPage() {
               different from traditional hotels.`}
             </p>
           </div>
+
+          {listing.hostId && (
+            <div className="mb-6">
+              <HostCard hostId={listing.hostId} profile={hostProfile} />
+            </div>
+          )}
 
           <div className="border-t border-slate-100 pt-6">
             <h2 className="font-display text-xl font-medium text-muted mb-4">Things to know</h2>

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
@@ -6,14 +6,21 @@ import { vi, describe, it, expect, beforeEach } from 'vitest'
 const mockSignOut = vi.fn()
 const mockOpenUserProfile = vi.fn()
 const mockUpdate = vi.fn()
+const mockSetProfileImage = vi.fn()
 
 const clerkState = {
   metadata: {} as Record<string, unknown>,
 }
 
+vi.mock('../utils/hostProfilesApi', () => ({
+  fetchHostProfile: vi.fn().mockResolvedValue({ id: 'user_1', name: 'Jane Sailor', avatarUrl: '', bio: '' }),
+  updateHostBio: vi.fn().mockResolvedValue(undefined),
+}))
+
 vi.mock('@clerk/clerk-react', () => ({
   useUser: () => ({
     user: {
+      id: 'user_1',
       firstName: 'Jane',
       lastName: 'Sailor',
       imageUrl: 'https://example.com/avatar.png',
@@ -22,6 +29,7 @@ vi.mock('@clerk/clerk-react', () => ({
       primaryEmailAddress: null,
       unsafeMetadata: clerkState.metadata,
       update: mockUpdate,
+      setProfileImage: mockSetProfileImage,
     },
     isLoaded: true,
   }),
@@ -44,6 +52,7 @@ describe('ProfilePage', () => {
     mockSignOut.mockReset()
     mockOpenUserProfile.mockReset()
     mockUpdate.mockReset()
+    mockSetProfileImage.mockReset()
   })
 
   it('shows the user identity and menu options', () => {
@@ -75,6 +84,22 @@ describe('ProfilePage', () => {
     renderPage()
     await user.click(screen.getByText(/^sign out$/i))
     expect(mockSignOut).toHaveBeenCalled()
+  })
+
+  it('uploads a new profile photo via user.setProfileImage', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    const file = new File(['pixels'], 'me.png', { type: 'image/png' })
+    await user.upload(screen.getByLabelText(/upload profile photo/i), file)
+    expect(mockSetProfileImage).toHaveBeenCalledWith({ file })
+  })
+
+  it('rejects non-image files without calling Clerk', async () => {
+    renderPage()
+    const file = new File(['not an image'], 'doc.pdf', { type: 'application/pdf' })
+    fireEvent.change(screen.getByLabelText(/upload profile photo/i), { target: { files: [file] } })
+    expect(mockSetProfileImage).not.toHaveBeenCalled()
+    expect(await screen.findByRole('alert')).toHaveTextContent(/image file/i)
   })
 
   it('saves an edited name via user.update', async () => {
