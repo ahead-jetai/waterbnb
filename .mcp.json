@@ -1,0 +1,16 @@
+{
+    "mcpServers": {
+<<<<<<< HEAD
+        "supabaseWaterBnB": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "mcp-remote",
+                "https://mcp.supabase.com/mcp?project_ref=dxnizkuqbilldqupmxnn"
+            ]
+        }
+=======
+        
+>>>>>>> a3394bb0f6fc18ea42d28bacab74959763490ac0
+    }
+}
