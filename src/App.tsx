@@ -10,6 +10,7 @@ import PaymentPage from './pages/PaymentPage'
 import BookingConfirmationPage from './pages/BookingConfirmationPage'
 import TripsPage from './pages/TripsPage'
 import HostAvailabilityPage from './pages/HostAvailabilityPage'
+import ProfilePage from './pages/ProfilePage'
 import HostLandingPage from './pages/HostLandingPage'
 import HostListingPage from './pages/HostListingPage'
 import HostingHomePage from './pages/HostingHomePage'
@@ -51,6 +52,10 @@ export default function App() {
           <Route
             path="/trips"
             element={<ProtectedRoute><TripsPage /></ProtectedRoute>}
+          />
+          <Route
+            path="/profile"
+            element={<ProtectedRoute><ProfilePage /></ProtectedRoute>}
           />
 
           {/* Hosting routes */}

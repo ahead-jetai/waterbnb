@@ -16,10 +16,14 @@ vi.mock('@clerk/clerk-react', () => ({
     clerkState.signedIn ? <>{children}</> : null,
   SignedOut: ({ children }: { children: ReactNode }) =>
     clerkState.signedIn ? null : <>{children}</>,
-  UserButton: () => <button aria-label="Open user menu">User Avatar</button>,
   useUser: () => ({
     user: clerkState.signedIn
-      ? { unsafeMetadata: clerkState.metadata, update: mockUpdate, firstName: 'Jane' }
+      ? {
+          unsafeMetadata: clerkState.metadata,
+          update: mockUpdate,
+          firstName: 'Jane',
+          imageUrl: 'https://example.com/avatar.png',
+        }
       : null,
     isLoaded: true,
   }),
@@ -46,7 +50,7 @@ describe('Header — signed out', () => {
     renderHeader()
     expect(screen.getAllByRole('link', { name: /sign in/i }).length).toBeGreaterThan(0)
     expect(screen.getAllByRole('link', { name: /get started/i }).length).toBeGreaterThan(0)
-    expect(screen.queryByRole('button', { name: /open user menu/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /your profile/i })).not.toBeInTheDocument()
   })
 
   it('does not show mode switch or nav links', () => {
@@ -63,11 +67,11 @@ describe('Header — signed in, traveling mode', () => {
     mockUpdate.mockReset()
   })
 
-  it('shows Explore nav, Switch to hosting, and the user menu', () => {
+  it('shows Explore nav, Switch to hosting, and the profile link', () => {
     renderHeader()
     expect(screen.getAllByRole('link', { name: /explore/i }).length).toBeGreaterThan(0)
     expect(screen.getAllByRole('button', { name: /switch to hosting/i }).length).toBeGreaterThan(0)
-    expect(screen.getAllByRole('button', { name: /open user menu/i }).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('link', { name: /your profile/i }).length).toBeGreaterThan(0)
     expect(screen.queryByRole('link', { name: /^sign in$/i })).not.toBeInTheDocument()
   })
 

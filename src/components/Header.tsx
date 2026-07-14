@@ -1,7 +1,27 @@
 import { useState } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
-import { SignedIn, SignedOut, UserButton } from '@clerk/clerk-react'
+import { SignedIn, SignedOut, useUser } from '@clerk/clerk-react'
 import { useUserMode } from '../hooks/useUserMode'
+
+/** Avatar that opens the WaterBnB profile page instead of Clerk's floating menu. */
+function ProfileLink({ onNavigate }: { onNavigate?: () => void }) {
+  const { user } = useUser()
+  if (!user) return null
+  return (
+    <Link
+      to="/profile"
+      onClick={onNavigate}
+      aria-label="Your profile"
+      className="inline-flex items-center no-underline"
+    >
+      <img
+        src={user.imageUrl}
+        alt=""
+        className="h-9 w-9 rounded-full object-cover ring-2 ring-brand/20 hover:ring-brand/50 transition-shadow"
+      />
+    </Link>
+  )
+}
 
 const navLinkClass =
   'relative text-slate-600 hover:text-brand transition-colors duration-200 py-0.5 no-underline ' +
@@ -94,7 +114,7 @@ export default function Header() {
           </SignedOut>
           <SignedIn>
             <ModeSwitchButton />
-            <UserButton afterSignOutUrl="/" />
+            <ProfileLink />
           </SignedIn>
         </div>
 
@@ -141,8 +161,14 @@ export default function Header() {
               ))}
               <ModeSwitchButton className="w-full mt-1" onSwitched={closeMenu} />
               <div className="flex items-center gap-3 mt-2">
-                <UserButton afterSignOutUrl="/" />
-                <span className="text-sm text-slate-600">My account</span>
+                <ProfileLink onNavigate={closeMenu} />
+                <Link
+                  to="/profile"
+                  onClick={closeMenu}
+                  className="text-sm text-slate-600 hover:text-brand no-underline"
+                >
+                  My profile
+                </Link>
               </div>
             </SignedIn>
           </div>
