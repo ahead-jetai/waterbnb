@@ -69,3 +69,34 @@ export type CheckoutSessionResult = {
 export async function fetchCheckoutSession(sessionId: string): Promise<CheckoutSessionResult> {
   return invoke<CheckoutSessionResult>('checkout-session', { sessionId })
 }
+
+export type StripeTransfer = {
+  id: string
+  amountCents: number
+  created: number // unix seconds
+  description: string | null
+  reversed: boolean
+}
+
+export type StripePayout = {
+  id: string
+  amountCents: number
+  created: number
+  arrivalDate: number
+  status: string
+}
+
+export type EarningsSummary = {
+  hasAccount: boolean
+  accountId?: string
+  availableCents?: number
+  pendingCents?: number
+  lifetimeCents?: number
+  transfers?: StripeTransfer[]
+  payouts?: StripePayout[]
+}
+
+/** Live earnings data (balance, transfers, payouts) from the host's Stripe account. */
+export async function fetchEarnings(hostId: string): Promise<EarningsSummary> {
+  return invoke<EarningsSummary>('earnings', { hostId })
+}

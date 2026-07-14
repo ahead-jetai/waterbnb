@@ -137,9 +137,17 @@ export async function isRangeAvailable(listingId: string, checkIn: string, check
 }
 
 export async function createBooking(input: CreateBookingInput): Promise<Booking> {
+  // Idempotency: this payment may already have been saved (page reload,
+  // StrictMode double effect). One payment reference = one booking.
+  const existing = await fetchBookingByReference(input.bookingReference)
+  if (existing) return existing
+
   // Re-check availability right before insert to close the race between selecting dates and paying.
   const available = await isRangeAvailable(input.listingId, input.checkIn, input.checkOut)
   if (!available) {
+    // The "conflict" may be this very payment saved by a concurrent run.
+    const dup = await fetchBookingByReference(input.bookingReference)
+    if (dup) return dup
     throw new Error('Sorry, those dates are no longer available. Please choose different dates.')
   }
 
@@ -163,7 +171,15 @@ export async function createBooking(input: CreateBookingInput): Promise<Booking>
     })
     .select()
     .single()
-  if (error) throw new Error(`Could not save booking: ${error.message}`)
+  if (error) {
+    // Unique violation on booking_reference: another concurrent run (e.g.
+    // StrictMode's doubled effect) already saved this payment — reuse it.
+    if (error.code === '23505') {
+      const existing = await fetchBookingByReference(input.bookingReference)
+      if (existing) return existing
+    }
+    throw new Error(`Could not save booking: ${error.message}`)
+  }
   return rowToBooking(data as BookingRow)
 }
 
@@ -190,6 +206,21 @@ export async function fetchGuestBookings(guestId: string): Promise<Booking[]> {
     .order('check_in', { ascending: false })
   if (error) {
     console.error('Failed to fetch bookings:', error.message)
+    return []
+  }
+  return (data as BookingRow[]).map(rowToBooking)
+}
+
+/** All confirmed bookings on a host's listings, soonest check-in first, with the listing embedded. */
+export async function fetchHostBookings(hostId: string): Promise<Booking[]> {
+  const { data, error } = await supabase
+    .from('bookings')
+    .select('*, listing:listings!inner(*)')
+    .eq('listing.host_id', hostId)
+    .eq('status', 'confirmed')
+    .order('check_in', { ascending: true })
+  if (error) {
+    console.error('Failed to fetch host bookings:', error.message)
     return []
   }
   return (data as BookingRow[]).map(rowToBooking)

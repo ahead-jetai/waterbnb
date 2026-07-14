@@ -20,7 +20,7 @@ function StatusPill({ ok, okLabel, pendingLabel }: { ok: boolean; okLabel: strin
   )
 }
 
-/** Host payments setup: Stripe Connect onboarding status + per-listing products. */
+/** Host payments setup: Stripe Connect onboarding and live account status. */
 export default function HostPaymentsPage() {
   const { user } = useUser()
   const [status, setStatus] = useState<ConnectStatus | null>(null)
@@ -74,8 +74,15 @@ export default function HostPaymentsPage() {
           Back to dashboard
         </Link>
 
-        <h1 className="font-display text-3xl font-medium text-muted mb-1">Payments</h1>
-        <p className="text-slate-500 mb-8">Get paid for bookings through Stripe.</p>
+        <div className="flex items-end justify-between gap-4 mb-8">
+          <div>
+            <h1 className="font-display text-3xl font-medium text-muted mb-1">Payments</h1>
+            <p className="text-slate-500">Get paid for bookings through Stripe.</p>
+          </div>
+          <Link to="/host/earnings" className="btn btn-secondary no-underline text-sm whitespace-nowrap">
+            Earnings & analytics
+          </Link>
+        </div>
 
         {error && (
           <div className="card p-4 mb-6 bg-danger/5 ring-danger/20">

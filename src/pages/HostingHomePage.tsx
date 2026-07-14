@@ -3,7 +3,10 @@ import { Link, Navigate } from 'react-router-dom'
 import { useUser } from '@clerk/clerk-react'
 import { useUserMode } from '../hooks/useUserMode'
 import { fetchHostListings } from '../utils/listingsApi'
-import type { Listing } from '../bookingTypes'
+import { fetchHostAnalytics, type HostAnalytics } from '../utils/hostAnalyticsApi'
+import { fetchHostBookings } from '../utils/bookingsApi'
+import { calculateNights, formatDateLong, pluralize } from '../utils/booking'
+import type { Booking, Listing } from '../bookingTypes'
 
 /** Hosting-mode home: the host's dashboard. */
 export default function HostingHomePage() {
@@ -11,13 +14,25 @@ export default function HostingHomePage() {
   const { mode, isLoaded } = useUserMode()
   const firstName = user?.firstName
   const [myListings, setMyListings] = useState<Listing[]>([])
+  const [analytics, setAnalytics] = useState<HostAnalytics | null>(null)
+  const [reservations, setReservations] = useState<Booking[]>([])
 
   useEffect(() => {
     if (!user?.id) return
     let cancelled = false
-    fetchHostListings(user.id).then(ls => { if (!cancelled) setMyListings(ls) })
+    fetchHostListings(user.id).then(ls => {
+      if (cancelled) return
+      setMyListings(ls)
+      fetchHostAnalytics(user.id, ls)
+        .then(a => { if (!cancelled) setAnalytics(a) })
+        .catch(() => {}) // dashboard cards just stay at their placeholders
+    })
+    fetchHostBookings(user.id).then(bs => { if (!cancelled) setReservations(bs) })
     return () => { cancelled = true }
   }, [user?.id])
+
+  const today = new Date().toISOString().slice(0, 10)
+  const upcoming = reservations.filter(b => b.checkOut >= today)
 
   // If the user lands here while in traveling mode, send them home.
   if (isLoaded && mode !== 'hosting') {
@@ -34,20 +49,92 @@ export default function HostingHomePage() {
         <p className="text-slate-500 mt-1">Manage your boats and grow your earnings.</p>
       </section>
 
-      <section aria-label="Hosting overview" className="container-p grid grid-cols-1 sm:grid-cols-3 gap-4 pb-8">
+      <section aria-label="Hosting overview" className="container-p grid grid-cols-1 sm:grid-cols-3 gap-4 pb-4">
         <div className="card p-5">
           <p className="text-sm text-slate-500">Active listings</p>
           <p className="font-display text-3xl font-medium text-muted mt-1">{myListings.length}</p>
         </div>
         <div className="card p-5">
           <p className="text-sm text-slate-500">Upcoming reservations</p>
-          <p className="font-display text-3xl font-medium text-muted mt-1">0</p>
+          <p className="font-display text-3xl font-medium text-muted mt-1">{analytics?.upcomingBookings ?? 0}</p>
         </div>
         <div className="card p-5">
           <p className="text-sm text-slate-500">Earnings this month</p>
-          <p className="font-display text-3xl font-medium text-muted mt-1">$0</p>
+          <p className="font-display text-3xl font-medium text-muted mt-1">
+            ${Math.round(analytics?.revenueThisMonth ?? 0).toLocaleString('en-US')}
+          </p>
         </div>
       </section>
+
+      <section className="container-p pb-8">
+        <Link to="/host/earnings" className="text-brand hover:text-brand-dark no-underline text-sm font-medium">
+          View earnings & analytics →
+        </Link>
+      </section>
+
+      {upcoming.length > 0 && (
+        <section aria-labelledby="reservations-heading" className="container-p pb-8">
+          <h2 id="reservations-heading" className="font-display text-2xl font-medium text-muted mb-4">
+            Upcoming reservations
+          </h2>
+          <ul role="list" className="space-y-4">
+            {upcoming.map(b => {
+              const nights = calculateNights(b.checkIn, b.checkOut)
+              return (
+                <li key={b.id} className="card p-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-900 truncate">
+                        {b.listing ? (
+                          <Link to={`/listing/${b.listing.id}`} className="no-underline text-slate-900 hover:text-brand">
+                            {b.listing.title}
+                          </Link>
+                        ) : 'Listing'}
+                      </p>
+                      <p className="text-sm text-slate-500 mt-0.5">
+                        {formatDateLong(b.checkIn)} → {formatDateLong(b.checkOut)} · {nights} {pluralize(nights, 'night')} · {b.guests} {pluralize(b.guests, 'guest')}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-display font-semibold text-brand">
+                        ${b.subtotal.toLocaleString('en-US')}
+                        <span className="text-xs text-slate-400 font-sans"> your earnings</span>
+                      </p>
+                      <p className="text-xs text-slate-400 mt-0.5">Ref {b.bookingReference}</p>
+                    </div>
+                  </div>
+
+                  <dl className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-2 text-sm">
+                    <div>
+                      <dt className="text-slate-400 text-xs">Guest</dt>
+                      <dd className="font-medium text-slate-700">{b.guestDetails.name}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-slate-400 text-xs">Email</dt>
+                      <dd className="font-medium text-slate-700 truncate">
+                        <a href={`mailto:${b.guestDetails.email}`} className="no-underline text-slate-700 hover:text-brand">
+                          {b.guestDetails.email}
+                        </a>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-slate-400 text-xs">Phone</dt>
+                      <dd className="font-medium text-slate-700">{b.guestDetails.phone || '—'}</dd>
+                    </div>
+                  </dl>
+
+                  {b.guestDetails.specialRequests && (
+                    <p className="mt-3 text-sm text-slate-600 bg-brand/5 rounded-lg px-3 py-2">
+                      <span className="font-medium text-slate-700">Special requests: </span>
+                      {b.guestDetails.specialRequests}
+                    </p>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      )}
 
       <section aria-labelledby="listings-heading" className="container-p pb-16">
         {myListings.length === 0 ? (
