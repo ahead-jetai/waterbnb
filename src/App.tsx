@@ -12,6 +12,7 @@ import TripsPage from './pages/TripsPage'
 import HostAvailabilityPage from './pages/HostAvailabilityPage'
 import ProfilePage from './pages/ProfilePage'
 import HostProfilePage from './pages/HostProfilePage'
+import HostPaymentsPage from './pages/HostPaymentsPage'
 import HostProfileSync from './components/HostProfileSync'
 import HostLandingPage from './pages/HostLandingPage'
 import HostListingPage from './pages/HostListingPage'
@@ -85,6 +86,10 @@ export default function App() {
           <Route
             path="/host/list/:id/availability"
             element={<ProtectedRoute><HostAvailabilityPage /></ProtectedRoute>}
+          />
+          <Route
+            path="/host/payments"
+            element={<ProtectedRoute><HostPaymentsPage /></ProtectedRoute>}
           />
         </Routes>
         <Footer />

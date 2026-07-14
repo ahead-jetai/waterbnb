@@ -1,25 +1,24 @@
-import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { useUser } from '@clerk/clerk-react'
-import type { BookingData, Listing, PaymentDetails } from '../bookingTypes'
+import type { BookingData, Listing } from '../bookingTypes'
 import { fetchListing } from '../utils/listingsApi'
-import { createBooking } from '../utils/bookingsApi'
+import { startCheckout } from '../utils/paymentsApi'
+import { calculateBookingTotals, calculateNights } from '../utils/booking'
 import { BookingProgress } from '../components/booking'
 
 export default function PaymentPage() {
   const { listingId } = useParams<{ listingId: string }>()
   const location = useLocation()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { user } = useUser()
   const [bookingData, setBookingData] = useState<BookingData | null>(null)
   const [listing, setListing] = useState<Listing | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const [paymentDetails, setPaymentDetails] = useState<PaymentDetails>({
-    cardNumber: '',
-    expiryDate: '',
-    cvv: '',
-    nameOnCard: ''
-  })
+  const [error, setError] = useState(
+    searchParams.get('cancelled') ? 'Payment was cancelled — you have not been charged.' : ''
+  )
 
   useEffect(() => {
     if (!listingId) return
@@ -47,81 +46,31 @@ export default function PaymentPage() {
 
   const checkInDate = new Date(bookingData.dates.checkIn)
   const checkOutDate = new Date(bookingData.dates.checkOut)
-  const nights = Math.ceil((checkOutDate.getTime() - checkInDate.getTime()) / (1000 * 60 * 60 * 24))
-  const subtotal = nights * listing.pricePerNight
-  const serviceFee = subtotal * 0.12
-  const total = subtotal + serviceFee
+  const nights = calculateNights(checkInDate, checkOutDate)
+  const { subtotal, serviceFee, total } = calculateBookingTotals(listing.pricePerNight, nights)
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target
-    let formattedValue = value
-
-    if (name === 'cardNumber') {
-      formattedValue = value.replace(/\s/g, '').replace(/(\d{4})/g, '$1 ').trim()
-      if (formattedValue.replace(/\s/g, '').length > 16) return
-    }
-    if (name === 'expiryDate') {
-      formattedValue = value.replace(/\D/g, '').replace(/(\d{2})(\d)/, '$1/$2').slice(0, 5)
-    }
-    if (name === 'cvv') {
-      formattedValue = value.replace(/\D/g, '').slice(0, 3)
-    }
-
-    setPaymentDetails(prev => ({ ...prev, [name]: formattedValue }))
-  }
-
-  const handleAutofill = () => {
-    setPaymentDetails({
-      cardNumber: '4532 1234 5678 9010',
-      expiryDate: '12/25',
-      cvv: '123',
-      nameOnCard: 'John Doe'
-    })
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    if (!paymentDetails.cardNumber || !paymentDetails.expiryDate || !paymentDetails.cvv || !paymentDetails.nameOnCard) {
-      alert('Please fill in all payment fields')
-      return
-    }
-    if (paymentDetails.cardNumber.replace(/\s/g, '').length !== 16) {
-      alert('Please enter a valid 16-digit card number')
-      return
-    }
-    if (paymentDetails.cvv.length !== 3) {
-      alert('Please enter a valid 3-digit CVV')
-      return
-    }
+  const handlePay = async () => {
     if (!listingId || !user || !bookingData.guestDetails) {
-      alert('You must be signed in with guest details to complete a booking')
+      setError('You must be signed in with guest details to complete a booking')
       return
     }
-
-    const updatedBookingData: BookingData = { ...bookingData, paymentDetails }
-    const bookingReference = 'WB' + Date.now().toString().slice(-8)
-
+    setError('')
     setSubmitting(true)
     try {
-      await createBooking({
+      // The edge function computes the real amounts server-side and returns a
+      // Stripe-hosted Checkout URL; Stripe redirects back to our confirmation
+      // page (with session_id) after payment.
+      const url = await startCheckout({
         listingId,
         guestId: user.id,
         checkIn: bookingData.dates.checkIn,
         checkOut: bookingData.dates.checkOut,
         guests: bookingData.guests,
         guestDetails: bookingData.guestDetails,
-        subtotal,
-        serviceFee,
-        total,
-        bookingReference,
       })
-      navigate(`/booking/${listingId}/confirmation`, {
-        state: { bookingData: updatedBookingData, bookingReference, total }
-      })
+      window.location.href = url
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Could not complete booking. Please try again.')
-    } finally {
+      setError(err instanceof Error ? err.message : 'Could not start checkout. Please try again.')
       setSubmitting(false)
     }
   }
@@ -145,101 +94,32 @@ export default function PaymentPage() {
 
         <div className="mb-8">
           <BookingProgress currentStep={3} />
-          <h1 className="font-display text-3xl font-medium text-muted text-center">Payment details</h1>
+          <h1 className="font-display text-3xl font-medium text-muted text-center">Payment</h1>
         </div>
 
         <div className="grid md:grid-cols-2 gap-8">
-          {/* Left Column - Payment Form */}
+          {/* Left Column - Pay with Stripe */}
           <div>
-            <form onSubmit={handleSubmit} className="card p-6">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="font-semibold text-base">Pay with card</h3>
-                <button
-                  type="button"
-                  onClick={handleAutofill}
-                  className="text-sm text-brand hover:text-brand-dark font-medium no-underline"
-                >
-                  Autofill (Testing)
-                </button>
-              </div>
+            <div className="card p-6">
+              <h3 className="font-semibold text-base mb-2">Secure checkout</h3>
+              <p className="text-sm text-slate-500 mb-6">
+                You'll be redirected to Stripe's secure payment page to complete your
+                booking. Your payment goes to the host, and WaterBnB keeps a 12% service fee.
+              </p>
 
-              <div className="space-y-5">
-                <div>
-                  <label htmlFor="cardNumber" className="block text-sm font-medium text-slate-700 mb-1.5">
-                    Card number <span className="text-danger">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="cardNumber"
-                    name="cardNumber"
-                    value={paymentDetails.cardNumber}
-                    onChange={handleInputChange}
-                    className="input"
-                    placeholder="1234 5678 9012 3456"
-                    required
-                  />
-                </div>
+              {error && (
+                <p className="text-sm text-danger mb-4" role="alert">{error}</p>
+              )}
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label htmlFor="expiryDate" className="block text-sm font-medium text-slate-700 mb-1.5">
-                      Expiry date <span className="text-danger">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      id="expiryDate"
-                      name="expiryDate"
-                      value={paymentDetails.expiryDate}
-                      onChange={handleInputChange}
-                      className="input"
-                      placeholder="MM/YY"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="cvv" className="block text-sm font-medium text-slate-700 mb-1.5">
-                      CVV <span className="text-danger">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      id="cvv"
-                      name="cvv"
-                      value={paymentDetails.cvv}
-                      onChange={handleInputChange}
-                      className="input"
-                      placeholder="123"
-                      required
-                    />
-                  </div>
-                </div>
+              <button onClick={handlePay} disabled={submitting} className="btn btn-primary w-full">
+                {submitting ? 'Redirecting to Stripe…' : `Pay with Stripe — $${total.toFixed(2)}`}
+              </button>
 
-                <div>
-                  <label htmlFor="nameOnCard" className="block text-sm font-medium text-slate-700 mb-1.5">
-                    Name on card <span className="text-danger">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="nameOnCard"
-                    name="nameOnCard"
-                    value={paymentDetails.nameOnCard}
-                    onChange={handleInputChange}
-                    className="input"
-                    placeholder="John Doe"
-                    required
-                  />
-                </div>
-
-                <div className="pt-2">
-                  <button type="submit" className="btn btn-primary w-full" disabled={submitting}>
-                    {submitting ? 'Processing…' : `Complete booking — $${total.toFixed(2)}`}
-                  </button>
-                </div>
-
-                <p className="text-xs text-slate-400 text-center">
-                  This is a demo. Any 16-digit card number will be accepted.
-                </p>
-              </div>
-            </form>
+              <p className="text-xs text-slate-400 text-center mt-4">
+                Payments are processed by Stripe. You won't be charged until you
+                confirm on the next page.
+              </p>
+            </div>
           </div>
 
           {/* Right Column - Booking Summary */}

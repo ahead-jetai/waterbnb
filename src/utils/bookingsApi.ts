@@ -167,6 +167,20 @@ export async function createBooking(input: CreateBookingInput): Promise<Booking>
   return rowToBooking(data as BookingRow)
 }
 
+/** Booking previously saved for a payment reference — used to avoid duplicates on confirmation reloads. */
+export async function fetchBookingByReference(reference: string): Promise<Booking | null> {
+  const { data, error } = await supabase
+    .from('bookings')
+    .select('*')
+    .eq('booking_reference', reference)
+    .maybeSingle()
+  if (error) {
+    console.error('Failed to look up booking by reference:', error.message)
+    return null
+  }
+  return data ? rowToBooking(data as BookingRow) : null
+}
+
 /** All bookings for a guest, newest first, with the related listing embedded. */
 export async function fetchGuestBookings(guestId: string): Promise<Booking[]> {
   const { data, error } = await supabase

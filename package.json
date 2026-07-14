@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:server": "node server/index.mjs",
+    "dev:full": "concurrently -n web,api -c blue,green \"vite\" \"node server/index.mjs\"",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",

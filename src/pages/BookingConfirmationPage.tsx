@@ -1,47 +1,29 @@
-import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import { useMemo, useLayoutEffect, useEffect, useState } from 'react'
-import type { BookingData, Listing } from '../bookingTypes'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import type { Booking, Listing } from '../bookingTypes'
 import { fetchListing } from '../utils/listingsApi'
+import { fetchCheckoutSession } from '../utils/paymentsApi'
+import { createBooking, fetchBookingByReference } from '../utils/bookingsApi'
 import { calculateNights, formatDateLong, pluralize } from '../utils/booking'
 import { ListingSummaryCard, InfoRow, PriceSummary } from '../components/booking'
 import CheckCircleIcon from '../components/icons/CheckCircleIcon'
 
-type ConfirmationState = {
-  bookingData: BookingData
-  bookingReference: string
-  total: number
-}
-
 const NEXT_STEPS = [
-  'Check your email for booking confirmation and additional details',
+  'Check your email for your Stripe payment receipt',
   'Your host will contact you within 24 hours with check-in instructions',
   'Save your booking reference number for future correspondence',
   'Contact support if you need to make any changes to your reservation'
 ] as const
 
-function parseConfirmationState(state: unknown): ConfirmationState | null {
-  if (!state || typeof state !== 'object') return null
-
-  const { bookingData, bookingReference, total } = state as Record<string, unknown>
-
-  if (!bookingData || typeof bookingData !== 'object') return null
-
-  const booking = bookingData as BookingData
-  if (!booking.guestDetails || !booking.paymentDetails) return null
-
-  return {
-    bookingData: booking,
-    bookingReference: String(bookingReference ?? ''),
-    total: Number(total ?? 0)
-  }
-}
-
 export default function BookingConfirmationPage() {
   const { listingId } = useParams<{ listingId: string }>()
-  const location = useLocation()
-  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const sessionId = searchParams.get('session_id')
 
   const [listing, setListing] = useState<Listing | null>(null)
+  const [booking, setBooking] = useState<Booking | null>(null)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (!listingId) return
@@ -50,31 +32,86 @@ export default function BookingConfirmationPage() {
     return () => { cancelled = true }
   }, [listingId])
 
-  const confirmationState = useMemo(
-    () => parseConfirmationState(location.state),
-    [location.state]
-  )
-
-  useLayoutEffect(() => {
-    if (!confirmationState) {
-      navigate(`/listing/${listingId}`, { replace: true })
+  // Verify the Stripe Checkout session, then persist the booking exactly once
+  // (page reloads find the existing booking by its payment reference).
+  useEffect(() => {
+    if (!sessionId) {
+      setError('Missing payment session. If you completed a payment, check My Trips.')
+      setLoading(false)
+      return
     }
-  }, [confirmationState, listingId, navigate])
+    let cancelled = false
 
-  if (!confirmationState || !listing) {
-    return null
+    async function confirm(id: string) {
+      try {
+        const session = await fetchCheckoutSession(id)
+        if (!session.paid) {
+          throw new Error('This payment has not been completed. You have not been charged.')
+        }
+
+        const existing = await fetchBookingByReference(session.reference)
+        if (existing) {
+          if (!cancelled) setBooking(existing)
+          return
+        }
+
+        const m = session.metadata
+        const saved = await createBooking({
+          listingId: m.listing_id,
+          guestId: m.guest_id,
+          checkIn: m.check_in,
+          checkOut: m.check_out,
+          guests: Number(m.guests),
+          guestDetails: {
+            name: m.guest_name,
+            email: m.guest_email,
+            phone: m.guest_phone,
+            specialRequests: m.special_requests || undefined,
+          },
+          subtotal: Number(m.subtotal_cents) / 100,
+          serviceFee: Number(m.service_fee_cents) / 100,
+          total: session.amountTotal / 100,
+          bookingReference: session.reference,
+        })
+        if (!cancelled) setBooking(saved)
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Could not confirm your booking.')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    confirm(sessionId)
+    return () => { cancelled = true }
+  }, [sessionId])
+
+  if (loading) {
+    return (
+      <div className="container-p py-16 flex items-center justify-center">
+        <div className="animate-pulse text-slate-400 text-sm">Confirming your payment…</div>
+      </div>
+    )
   }
 
-  const { bookingData, bookingReference, total } = confirmationState
-  const { guestDetails, paymentDetails, dates, guests } = bookingData
+  if (error || !booking || !listing) {
+    return (
+      <div className="container-p py-16 text-center max-w-xl mx-auto">
+        <h1 className="font-display text-3xl font-semibold mb-4">Something went wrong</h1>
+        <p className="text-slate-500 mb-8" role="alert">{error || 'We could not load your booking.'}</p>
+        <div className="flex gap-3 justify-center">
+          <Link to="/trips" className="btn btn-primary no-underline">Check My Trips</Link>
+          <Link to={`/listing/${listingId}`} className="btn btn-secondary no-underline">Back to listing</Link>
+        </div>
+      </div>
+    )
+  }
 
-  const nights = calculateNights(dates.checkIn, dates.checkOut)
-  const nightlyTotal = nights * listing.pricePerNight
-  const serviceFee = total - nightlyTotal
+  const { guestDetails } = booking
+  const nights = calculateNights(booking.checkIn, booking.checkOut)
 
   const priceLineItems = [
-    { label: `$${listing.pricePerNight.toFixed(2)} × ${nights} ${pluralize(nights, 'night')}`, amount: nightlyTotal },
-    { label: 'Service fee', amount: serviceFee }
+    { label: `$${listing.pricePerNight.toFixed(2)} × ${nights} ${pluralize(nights, 'night')}`, amount: booking.subtotal },
+    { label: 'Service fee', amount: booking.serviceFee }
   ]
 
   return (
@@ -85,8 +122,8 @@ export default function BookingConfirmationPage() {
           <CheckCircleIcon className="mb-4" />
           <h1 className="font-display text-4xl font-medium text-muted mb-2">Booking confirmed!</h1>
           <p className="text-slate-500">
-            Your reservation has been successfully confirmed. We've sent a confirmation email to{' '}
-            <span className="font-medium text-slate-700">{guestDetails?.email}</span>
+            Your payment was successful. We've sent a receipt to{' '}
+            <span className="font-medium text-slate-700">{guestDetails.email}</span>
           </p>
         </div>
 
@@ -94,7 +131,7 @@ export default function BookingConfirmationPage() {
         <div className="card p-6 mb-6 bg-brand/5 ring-brand/20">
           <div className="text-center">
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Booking Reference</p>
-            <p className="font-display text-3xl font-semibold text-brand">{bookingReference}</p>
+            <p className="font-display text-3xl font-semibold text-brand">{booking.bookingReference}</p>
           </div>
         </div>
 
@@ -108,8 +145,8 @@ export default function BookingConfirmationPage() {
             <div>
               <h4 className="font-semibold text-sm text-slate-700 mb-3">Dates</h4>
               <div className="space-y-2">
-                <InfoRow label="Check-in" value={formatDateLong(dates.checkIn)} />
-                <InfoRow label="Check-out" value={formatDateLong(dates.checkOut)} />
+                <InfoRow label="Check-in" value={formatDateLong(booking.checkIn)} />
+                <InfoRow label="Check-out" value={formatDateLong(booking.checkOut)} />
                 <InfoRow label="Duration" value={`${nights} ${pluralize(nights, 'night')}`} />
               </div>
             </div>
@@ -117,15 +154,15 @@ export default function BookingConfirmationPage() {
             <div>
               <h4 className="font-semibold text-sm text-slate-700 mb-3">Guest information</h4>
               <div className="space-y-2">
-                <InfoRow label="Guest name" value={guestDetails?.name} />
-                <InfoRow label="Email" value={guestDetails?.email} />
-                <InfoRow label="Phone" value={guestDetails?.phone} />
-                <InfoRow label="Number of guests" value={guests} />
+                <InfoRow label="Guest name" value={guestDetails.name} />
+                <InfoRow label="Email" value={guestDetails.email} />
+                <InfoRow label="Phone" value={guestDetails.phone} />
+                <InfoRow label="Number of guests" value={booking.guests} />
               </div>
             </div>
           </div>
 
-          {guestDetails?.specialRequests && (
+          {guestDetails.specialRequests && (
             <div className="border-t border-slate-100 pt-6 mt-6">
               <h4 className="font-semibold text-sm text-slate-700 mb-2">Special requests</h4>
               <p className="text-slate-600 text-sm">{guestDetails.specialRequests}</p>
@@ -138,9 +175,9 @@ export default function BookingConfirmationPage() {
           <h2 className="font-display text-xl font-medium text-muted mb-4">Payment summary</h2>
           <PriceSummary
             lineItems={priceLineItems}
-            total={total}
+            total={booking.total}
             totalLabel="Total paid"
-            footer={<p>Paid with card ending in {paymentDetails?.cardNumber.slice(-4)}</p>}
+            footer={<p>Paid securely via Stripe Checkout</p>}
           />
         </div>
 
@@ -161,9 +198,9 @@ export default function BookingConfirmationPage() {
 
         {/* Actions */}
         <div className="flex gap-4 justify-center">
-          <button onClick={() => navigate('/')} className="btn btn-primary">
-            Back to home
-          </button>
+          <Link to="/trips" className="btn btn-primary no-underline">
+            View My Trips
+          </Link>
           <button
             onClick={() => window.print()}
             className="btn btn-secondary"

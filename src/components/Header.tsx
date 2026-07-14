@@ -69,6 +69,7 @@ export default function Header() {
   const hostLinks = [
     { to: '/hosting', label: 'Dashboard' },
     { to: '/host/list', label: 'Create listing' },
+    { to: '/host/payments', label: 'Payments' },
   ]
   const links = mode === 'hosting' ? hostLinks : travelerLinks
 
