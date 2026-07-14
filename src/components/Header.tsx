@@ -42,7 +42,10 @@ export default function Header() {
   const { mode } = useUserMode()
   const closeMenu = () => setOpen(false)
 
-  const travelerLinks = [{ to: '/', label: 'Explore' }]
+  const travelerLinks = [
+    { to: '/', label: 'Explore' },
+    { to: '/trips', label: 'My Trips' },
+  ]
   const hostLinks = [
     { to: '/hosting', label: 'Dashboard' },
     { to: '/host/list', label: 'Create listing' },

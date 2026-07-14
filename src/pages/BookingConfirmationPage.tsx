@@ -1,7 +1,7 @@
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import { useMemo, useLayoutEffect } from 'react'
-import type { BookingData } from '../bookingTypes'
-import { listings } from '../data/listings'
+import { useMemo, useLayoutEffect, useEffect, useState } from 'react'
+import type { BookingData, Listing } from '../bookingTypes'
+import { fetchListing } from '../utils/listingsApi'
 import { calculateNights, formatDateLong, pluralize } from '../utils/booking'
 import { ListingSummaryCard, InfoRow, PriceSummary } from '../components/booking'
 import CheckCircleIcon from '../components/icons/CheckCircleIcon'
@@ -41,7 +41,14 @@ export default function BookingConfirmationPage() {
   const location = useLocation()
   const navigate = useNavigate()
 
-  const listing = listings.find(l => l.id === listingId)
+  const [listing, setListing] = useState<Listing | null>(null)
+
+  useEffect(() => {
+    if (!listingId) return
+    let cancelled = false
+    fetchListing(listingId).then(l => { if (!cancelled) setListing(l) })
+    return () => { cancelled = true }
+  }, [listingId])
 
   const confirmationState = useMemo(
     () => parseConfirmationState(location.state),

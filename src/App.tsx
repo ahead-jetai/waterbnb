@@ -8,6 +8,7 @@ import BookingReviewPage from './pages/BookingReviewPage'
 import GuestDetailsPage from './pages/GuestDetailsPage'
 import PaymentPage from './pages/PaymentPage'
 import BookingConfirmationPage from './pages/BookingConfirmationPage'
+import TripsPage from './pages/TripsPage'
 import HostLandingPage from './pages/HostLandingPage'
 import HostListingPage from './pages/HostListingPage'
 import HostingHomePage from './pages/HostingHomePage'
@@ -45,6 +46,10 @@ export default function App() {
           <Route
             path="/booking/:listingId/confirmation"
             element={<ProtectedRoute><BookingConfirmationPage /></ProtectedRoute>}
+          />
+          <Route
+            path="/trips"
+            element={<ProtectedRoute><TripsPage /></ProtectedRoute>}
           />
 
           {/* Hosting routes */}

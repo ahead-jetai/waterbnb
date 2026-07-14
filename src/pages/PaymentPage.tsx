@@ -1,14 +1,19 @@
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useState, useEffect } from 'react'
-import type { BookingData, PaymentDetails } from '../bookingTypes'
-import { listings } from '../data/listings'
+import { useUser } from '@clerk/clerk-react'
+import type { BookingData, Listing, PaymentDetails } from '../bookingTypes'
+import { fetchListing } from '../utils/listingsApi'
+import { createBooking } from '../utils/bookingsApi'
 import { BookingProgress } from '../components/booking'
 
 export default function PaymentPage() {
   const { listingId } = useParams<{ listingId: string }>()
   const location = useLocation()
   const navigate = useNavigate()
+  const { user } = useUser()
   const [bookingData, setBookingData] = useState<BookingData | null>(null)
+  const [listing, setListing] = useState<Listing | null>(null)
+  const [submitting, setSubmitting] = useState(false)
   const [paymentDetails, setPaymentDetails] = useState<PaymentDetails>({
     cardNumber: '',
     expiryDate: '',
@@ -16,7 +21,12 @@ export default function PaymentPage() {
     nameOnCard: ''
   })
 
-  const listing = listings.find(l => l.id === listingId)
+  useEffect(() => {
+    if (!listingId) return
+    let cancelled = false
+    fetchListing(listingId).then(l => { if (!cancelled) setListing(l) })
+    return () => { cancelled = true }
+  }, [listingId])
 
   useEffect(() => {
     if (location.state && location.state.bookingData) {
@@ -69,7 +79,7 @@ export default function PaymentPage() {
     })
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!paymentDetails.cardNumber || !paymentDetails.expiryDate || !paymentDetails.cvv || !paymentDetails.nameOnCard) {
@@ -84,13 +94,36 @@ export default function PaymentPage() {
       alert('Please enter a valid 3-digit CVV')
       return
     }
+    if (!listingId || !user || !bookingData.guestDetails) {
+      alert('You must be signed in with guest details to complete a booking')
+      return
+    }
 
     const updatedBookingData: BookingData = { ...bookingData, paymentDetails }
     const bookingReference = 'WB' + Date.now().toString().slice(-8)
 
-    navigate(`/booking/${listingId}/confirmation`, {
-      state: { bookingData: updatedBookingData, bookingReference, total }
-    })
+    setSubmitting(true)
+    try {
+      await createBooking({
+        listingId,
+        guestId: user.id,
+        checkIn: bookingData.dates.checkIn,
+        checkOut: bookingData.dates.checkOut,
+        guests: bookingData.guests,
+        guestDetails: bookingData.guestDetails,
+        subtotal,
+        serviceFee,
+        total,
+        bookingReference,
+      })
+      navigate(`/booking/${listingId}/confirmation`, {
+        state: { bookingData: updatedBookingData, bookingReference, total }
+      })
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Could not complete booking. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const handleBack = () => {
@@ -197,8 +230,8 @@ export default function PaymentPage() {
                 </div>
 
                 <div className="pt-2">
-                  <button type="submit" className="btn btn-primary w-full">
-                    Complete booking — ${total.toFixed(2)}
+                  <button type="submit" className="btn btn-primary w-full" disabled={submitting}>
+                    {submitting ? 'Processing…' : `Complete booking — $${total.toFixed(2)}`}
                   </button>
                 </div>
 

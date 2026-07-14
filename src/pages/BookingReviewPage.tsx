@@ -1,6 +1,6 @@
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import { listings } from '../data/listings'
-import type { BookingData } from '../bookingTypes'
+import { fetchListing } from '../utils/listingsApi'
+import type { BookingData, Listing } from '../bookingTypes'
 import { useEffect, useState } from 'react'
 import { BookingProgress } from '../components/booking'
 
@@ -9,8 +9,7 @@ export default function BookingReviewPage() {
   const location = useLocation()
   const navigate = useNavigate()
   const [bookingData, setBookingData] = useState<BookingData | null>(null)
-
-  const listing = listings.find(l => l.id === listingId)
+  const [listing, setListing] = useState<Listing | null>(null)
 
   useEffect(() => {
     if (location.state && location.state.bookingData) {
@@ -19,6 +18,13 @@ export default function BookingReviewPage() {
       navigate(`/listing/${listingId}`)
     }
   }, [location.state, listingId, navigate])
+
+  useEffect(() => {
+    if (!listingId) return
+    let cancelled = false
+    fetchListing(listingId).then(l => { if (!cancelled) setListing(l) })
+    return () => { cancelled = true }
+  }, [listingId])
 
   if (!listing || !bookingData) {
     return null

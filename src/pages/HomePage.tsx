@@ -4,8 +4,9 @@ import { useAuth, useUser } from '@clerk/clerk-react'
 import Hero from '../components/Hero'
 import Carousel from '../components/Carousel'
 import ListingCard from '../components/ListingCard'
+import SearchFilters from '../components/SearchFilters'
 import { listings as mockListings } from '../data/listings'
-import { fetchListings } from '../utils/listingsApi'
+import { fetchListings, type ListingFilters } from '../utils/listingsApi'
 import { useUserMode } from '../hooks/useUserMode'
 import type { Listing } from '../bookingTypes'
 
@@ -70,12 +71,19 @@ function TravelerHome() {
   const { user } = useUser()
   const firstName = user?.firstName
   const [listings, setListings] = useState<Listing[]>(mockListings)
+  const [filters, setFilters] = useState<ListingFilters>({})
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let cancelled = false
-    fetchListings().then(all => { if (!cancelled) setListings(all) })
+    fetchListings(filters).then(all => {
+      if (!cancelled) {
+        setListings(all)
+        setLoading(false)
+      }
+    })
     return () => { cancelled = true }
-  }, [])
+  }, [filters])
 
   return (
     <main>
@@ -99,13 +107,20 @@ function TravelerHome() {
             <p className="text-slate-500 mt-1">Handpicked stays on boats and houseboats worldwide.</p>
           </div>
         </div>
-        <ul role="list" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {listings.map((l) => (
-            <li key={l.id}>
-              <ListingCard item={l} />
-            </li>
-          ))}
-        </ul>
+        <SearchFilters filters={filters} onChange={setFilters} />
+        {loading ? (
+          <div className="text-slate-400 text-sm py-8 text-center">Loading listings…</div>
+        ) : listings.length === 0 ? (
+          <div className="text-slate-400 text-sm py-8 text-center">No listings match your search.</div>
+        ) : (
+          <ul role="list" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {listings.map((l) => (
+              <li key={l.id}>
+                <ListingCard item={l} />
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </main>
   )

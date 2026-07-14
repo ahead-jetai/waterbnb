@@ -40,3 +40,23 @@ export type BookingData = {
   guestDetails?: GuestDetails
   paymentDetails?: PaymentDetails
 }
+
+export type BookingStatus = 'confirmed' | 'cancelled'
+
+/** A persisted booking, as stored in Supabase. */
+export type Booking = {
+  id: string
+  listingId: string
+  guestId: string
+  checkIn: string // ISO date string
+  checkOut: string
+  guests: number
+  status: BookingStatus
+  guestDetails: GuestDetails
+  subtotal: number
+  serviceFee: number
+  total: number
+  bookingReference: string
+  createdAt: string
+  listing?: Listing
+}

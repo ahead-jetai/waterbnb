@@ -2,6 +2,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { useUser } from '@clerk/clerk-react';
 import { fetchListing } from '../utils/listingsApi';
+import { fetchBookedDateRanges, rangesOverlap } from '../utils/bookingsApi';
 import StarRating from '../components/StarRating';
 import type { BookingData, Listing } from '../bookingTypes';
 
@@ -71,6 +72,8 @@ export default function ListingDetailPage() {
   const [checkIn, setCheckIn] = useState('');
   const [checkOut, setCheckOut] = useState('');
   const [guests, setGuests] = useState(1);
+  const [bookedRanges, setBookedRanges] = useState<{ checkIn: string; checkOut: string }[]>([]);
+  const [dateError, setDateError] = useState('');
 
   useEffect(() => {
     if (!id) return;
@@ -81,8 +84,14 @@ export default function ListingDetailPage() {
         setLoading(false);
       }
     });
+    fetchBookedDateRanges(id).then(ranges => {
+      if (!cancelled) setBookedRanges(ranges);
+    });
     return () => { cancelled = true };
   }, [id]);
+
+  const formatShort = (iso: string) =>
+    new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
   if (loading) {
     return (
@@ -106,6 +115,7 @@ export default function ListingDetailPage() {
 
   const handleReserve = (e: React.FormEvent) => {
     e.preventDefault();
+    setDateError('');
 
     if (!checkIn || !checkOut) {
       alert('Please select check-in and check-out dates');
@@ -117,6 +127,12 @@ export default function ListingDetailPage() {
 
     if (checkOutDate <= checkInDate) {
       alert('Check-out date must be after check-in date');
+      return;
+    }
+
+    const overlapping = bookedRanges.some(r => rangesOverlap(checkIn, checkOut, r.checkIn, r.checkOut));
+    if (overlapping) {
+      setDateError('Those dates overlap an existing booking for this listing. Please choose different dates.');
       return;
     }
 
@@ -238,6 +254,20 @@ export default function ListingDetailPage() {
                   required
                 />
               </div>
+              {dateError && (
+                <p className="text-sm text-danger" role="alert">{dateError}</p>
+              )}
+              {bookedRanges.length > 0 && (
+                <div className="text-xs text-slate-400">
+                  <span className="font-medium text-slate-500">Unavailable: </span>
+                  {bookedRanges.map((r, i) => (
+                    <span key={i}>
+                      {formatShort(r.checkIn)} – {formatShort(r.checkOut)}
+                      {i < bookedRanges.length - 1 ? ', ' : ''}
+                    </span>
+                  ))}
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">Guests</label>
                 <select

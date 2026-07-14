@@ -1,6 +1,16 @@
 import { supabase } from './supabase'
 import { listings as mockListings } from '../data/listings'
+import { fetchUnavailableListingIds } from './bookingsApi'
 import type { Listing } from '../bookingTypes'
+
+export type ListingFilters = {
+  location?: string
+  minPrice?: number
+  maxPrice?: number
+  boatType?: string
+  checkIn?: string
+  checkOut?: string
+}
 
 export type ListingInput = {
   title: string
@@ -66,17 +76,27 @@ function inputToRow(input: ListingInput) {
   }
 }
 
-/** All listings, newest first. Falls back to the bundled demo data if Supabase is unreachable. */
-export async function fetchListings(): Promise<Listing[]> {
-  const { data, error } = await supabase
-    .from('listings')
-    .select('*')
-    .order('created_at', { ascending: false })
+/** All listings, newest first, optionally narrowed by location/price/boat type/date availability. Falls back to the bundled demo data if Supabase is unreachable. */
+export async function fetchListings(filters?: ListingFilters): Promise<Listing[]> {
+  let query = supabase.from('listings').select('*').order('created_at', { ascending: false })
+  if (filters?.location) query = query.ilike('location', `%${filters.location}%`)
+  if (filters?.boatType) query = query.eq('boat_type', filters.boatType)
+  if (filters?.minPrice != null) query = query.gte('price_per_night', filters.minPrice)
+  if (filters?.maxPrice != null) query = query.lte('price_per_night', filters.maxPrice)
+
+  const { data, error } = await query
   if (error) {
     console.error('Failed to fetch listings:', error.message)
     return mockListings
   }
-  return (data as ListingRow[]).map(rowToListing)
+  let result = (data as ListingRow[]).map(rowToListing)
+
+  if (filters?.checkIn && filters?.checkOut) {
+    const unavailable = await fetchUnavailableListingIds(filters.checkIn, filters.checkOut)
+    result = result.filter(l => !unavailable.has(l.id))
+  }
+
+  return result
 }
 
 /** Single listing by id — from Supabase, falling back to the bundled demo data. */
