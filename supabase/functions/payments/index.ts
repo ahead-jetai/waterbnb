@@ -3,9 +3,10 @@
  *
  * Hosts are onboarded as Stripe connected accounts (marketplace/recipient
  * configuration, Express dashboard). Guests pay through Stripe hosted
- * Checkout; each payment is a destination charge that routes the nightly
- * subtotal to the host while WaterBnB keeps the 12% service fee as the
- * application fee.
+ * Checkout; each payment is a destination charge. The application fee is the
+ * 12% service fee plus the estimated Stripe processing fee, so the host
+ * receives the nightly subtotal minus processing costs and WaterBnB nets its
+ * full 12%.
  *
  * Routes (all POST, dispatched on the sub-path after /payments):
  *   /connect-account   { hostId, name, email }        -> { accountId }
@@ -233,9 +234,9 @@ async function createProduct(body: Record<string, unknown>): Promise<Response> {
 
 // --- Step 4: checkout -------------------------------------------------------
 // Guests pay through Stripe hosted Checkout. This is a destination charge:
-// the full amount is charged by the platform, the nightly subtotal flows to
-// the host's connected account, and WaterBnB's 12% service fee is retained
-// via application_fee_amount.
+// the full amount is charged by the platform, the host's share flows to
+// their connected account, and WaterBnB retains the service fee plus the
+// estimated processing fee via application_fee_amount.
 async function checkout(body: Record<string, unknown>): Promise<Response> {
   const { listingId, guestId, checkIn, checkOut, guests, guestDetails } = body as {
     listingId?: string
@@ -268,6 +269,12 @@ async function checkout(body: Record<string, unknown>): Promise<Response> {
   const nightlyCents = Math.round(Number(listing.price_per_night) * 100)
   const subtotalCents = nightlyCents * nights
   const serviceFeeCents = Math.round(subtotalCents * 0.12) // WaterBnB's 12% cut
+  const totalCents = subtotalCents + serviceFeeCents
+  // Estimated Stripe processing fee (US card: 2.9% + 30¢). Included in the
+  // application fee so the host bears it and WaterBnB nets its full 12%:
+  // host receives subtotal − Stripe fee, platform keeps the service fee.
+  const stripeFeeCents = Math.round(totalCents * 0.029) + 30
+  const applicationFeeCents = serviceFeeCents + stripeFeeCents
 
   const productId = await ensureProductForListing(listing)
 
@@ -295,8 +302,9 @@ async function checkout(body: Record<string, unknown>): Promise<Response> {
       },
     ],
     payment_intent_data: {
-      // Destination charge: platform keeps the fee, host gets the rest.
-      application_fee_amount: serviceFeeCents,
+      // Destination charge: platform keeps service fee + processing fee,
+      // host gets the rest (subtotal − Stripe fee).
+      application_fee_amount: applicationFeeCents,
       transfer_data: {
         destination: accountId,
       },
@@ -314,6 +322,8 @@ async function checkout(body: Record<string, unknown>): Promise<Response> {
       special_requests: guestDetails.specialRequests ?? '',
       subtotal_cents: String(subtotalCents),
       service_fee_cents: String(serviceFeeCents),
+      stripe_fee_cents: String(stripeFeeCents),
+      host_net_cents: String(totalCents - applicationFeeCents),
     },
     success_url: `${clientUrl}/booking/${listingId}/confirmation?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${clientUrl}/booking/${listingId}/payment?cancelled=1`,
@@ -340,7 +350,7 @@ async function checkoutSession(body: Record<string, unknown>): Promise<Response>
 // --- Step 5: earnings --------------------------------------------------------
 // Money data for the host dashboard, read live from Stripe. Transfers to the
 // connected account are the host's earnings (destination charges route the
-// nightly subtotal there); the balance shows what has not yet been paid out.
+// host's share there); the balance shows what has not yet been paid out.
 async function earnings(body: Record<string, unknown>): Promise<Response> {
   const { hostId } = body as { hostId?: string }
   if (!hostId) return fail(400, 'hostId is required')

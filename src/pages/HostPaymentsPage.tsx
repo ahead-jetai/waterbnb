@@ -100,8 +100,9 @@ export default function HostPaymentsPage() {
                 <div>
                   <h2 className="font-semibold text-base mb-1">Stripe account</h2>
                   <p className="text-sm text-slate-500">
-                    Guests pay WaterBnB at checkout; your nightly earnings are transferred to
-                    your Stripe account, and WaterBnB keeps its 12% service fee.
+                    Guests pay WaterBnB at checkout; your nightly earnings (minus card
+                    processing fees) are transferred to your Stripe account, and WaterBnB
+                    keeps its 12% service fee.
                   </p>
                 </div>
                 {status?.hasAccount && (
