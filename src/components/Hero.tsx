@@ -11,8 +11,8 @@ export default function Hero({ ctas }: HeroProps) {
     <section className="relative isolate" aria-label="Hero section">
       <div className="absolute inset-0 -z-10">
         <img
-          src="https://images.unsplash.com/photo-1493558103817-58b2924bce98?auto=format&fit=crop&w=1600&q=60"
-          alt="Coastline with boats"
+          src="/images/water-bnb-hero-carousel-4.png"
+          alt="Yacht anchored on clear blue water"
           className="h-full w-full object-cover"
         />
         <div className="absolute inset-0 bg-gradient-to-br from-muted/80 via-muted/55 to-black/20" />
