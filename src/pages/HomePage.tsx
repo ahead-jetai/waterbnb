@@ -10,23 +10,16 @@ import { fetchListings, type ListingFilters } from '../utils/listingsApi'
 import { useUserMode } from '../hooks/useUserMode'
 import type { Listing } from '../bookingTypes'
 
+// Served from public/images — bundled with the app, no external hosts to fail.
 const carouselSlides = [
-  {
-    src: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21?auto=format&fit=crop&w=1600&q=60',
-    alt: 'Catamaran at sunset',
-  },
-  {
-    src: 'https://images.unsplash.com/photo-1493558103817-58b2924bce98?auto=format&fit=crop&w=1600&q=60',
-    alt: 'Coastline harbor',
-  },
-  {
-    src: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1600&q=60',
-    alt: 'Houseboat near city',
-  },
-  {
-    src: 'https://images.unsplash.com/photo-1510826601749-74c1f2b63030?auto=format&fit=crop&w=1600&q=60',
-    alt: 'Yacht pier at night',
-  },
+  { src: '/images/water-bnb-hero-carousel-1.png', alt: 'Boat moored on calm water' },
+  { src: '/images/water-bnb-hero-carousel-2.png', alt: 'Waterfront stay at golden hour' },
+  { src: '/images/water-bnb-hero-carousel-3.png', alt: 'Houseboat on the water' },
+  { src: '/images/water-bnb-hero-carousel-5.png', alt: 'Friends jumping off a yacht into a coastal bay' },
+  { src: '/images/water-bnb-hero-carousel-6.png', alt: 'Catamaran anchored by a tropical beach' },
+  { src: '/images/water-bnb-hero-carousel-7.png', alt: 'Boat party in turquoise water' },
+  { src: '/images/water-bnb-hero-carousel-8.png', alt: 'Yoga session on bohemian houseboats' },
+  { src: '/images/water-bnb-hero.png', alt: 'Boats on the water at sunset' },
 ]
 
 /** Marketing landing shown to signed-out visitors — the app is members-only. */
