@@ -22,14 +22,15 @@ function StatCard({ label, value, hint }: { label: string; value: string; hint?:
 /** Six-month revenue trend rendered as a simple CSS bar chart. */
 function RevenueChart({ monthly }: { monthly: HostAnalytics['monthly'] }) {
   const max = Math.max(...monthly.map(m => m.revenue), 1)
+  const BAR_MAX_PX = 120 // pixel heights: % heights collapse inside auto-height flex columns
   return (
-    <div className="flex items-end gap-3 h-40" role="img" aria-label="Monthly revenue chart">
+    <div className="flex items-end gap-3" role="img" aria-label="Monthly revenue chart">
       {monthly.map(m => (
-        <div key={m.month} className="flex-1 flex flex-col items-center gap-1 min-w-0">
+        <div key={m.month} className="flex-1 flex flex-col items-center justify-end gap-1 min-w-0">
           <span className="text-xs text-slate-500 tabular-nums">{m.revenue ? usd(m.revenue) : ''}</span>
           <div
-            className="w-full rounded-t-md bg-brand/80 transition-all"
-            style={{ height: `${Math.max(m.revenue ? 6 : 2, (m.revenue / max) * 100)}%` }}
+            className={`w-full rounded-t-md transition-all ${m.revenue ? 'bg-brand/80' : 'bg-slate-200'}`}
+            style={{ height: `${m.revenue ? Math.max(8, Math.round((m.revenue / max) * BAR_MAX_PX)) : 3}px` }}
             title={`${m.month}: ${usd(m.revenue)} · ${m.nights} nights`}
           />
           <span className="text-xs text-slate-400 truncate">{m.month.split(' ')[0]}</span>

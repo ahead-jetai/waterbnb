@@ -28,6 +28,7 @@ export type Conversation = {
   createdAt: string
   lastMessagePreview: string | null
   lastMessageAt: string | null
+  unreadCount: number
   listing?: Listing
   booking?: Booking
 }
@@ -84,6 +85,7 @@ function rowToConversation(r: any): Conversation {
     createdAt: r.created_at,
     lastMessagePreview: r.last_message_preview ?? null,
     lastMessageAt: r.last_message_at ?? null,
+    unreadCount: r.unread_count ?? 0,
     listing: r.listing
       ? {
           id: r.listing.id,
@@ -136,6 +138,12 @@ export async function fetchMessages(getToken: TokenGetter, conversationId: strin
 export async function sendMessage(getToken: TokenGetter, conversationId: string, body: string): Promise<Message> {
   const { message } = await invoke<{ message: MessageRow }>('send', getToken, { conversationId, body })
   return rowToMessage(message)
+}
+
+/** Total unread chat messages across all of the caller's conversations. */
+export async function fetchUnreadMessagesCount(getToken: TokenGetter): Promise<number> {
+  const { count } = await invoke<{ count: number }>('unread-count', getToken)
+  return count
 }
 
 export async function fetchNotifications(getToken: TokenGetter): Promise<AppNotification[]> {

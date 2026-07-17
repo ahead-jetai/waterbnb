@@ -81,6 +81,10 @@ export default function MessagesPage() {
   useEffect(() => {
     if (!conversationId || !user?.id) return
     setMessages([])
+    // Opening the thread marks it read server-side; clear its badge locally too.
+    setConversations(prev =>
+      prev.map(c => (c.id === conversationId && c.unreadCount ? { ...c, unreadCount: 0 } : c)),
+    )
     const poller = startPolling(async () => {
       const ms = await fetchMessages(getToken, conversationId)
       setMessages(prev => (ms.length === prev.length ? prev : ms))
@@ -155,12 +159,17 @@ export default function MessagesPage() {
                       ) : (
                         <div className="w-12 h-12 rounded-lg bg-slate-100 shrink-0" />
                       )}
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <p className="font-semibold text-sm text-slate-900 truncate">{c.listing?.title ?? 'Booking chat'}</p>
                         <p className="text-xs text-slate-500 truncate">
                           {c.lastMessagePreview ?? 'New conversation'}
                         </p>
                       </div>
+                      {c.unreadCount > 0 && (
+                        <span className="shrink-0 inline-flex items-center justify-center min-w-[20px] h-5 rounded-full bg-brand text-white text-[11px] font-semibold px-1.5">
+                          {c.unreadCount > 9 ? '9+' : c.unreadCount}
+                        </span>
+                      )}
                     </div>
                   </Link>
                 </li>

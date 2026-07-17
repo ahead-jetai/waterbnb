@@ -10,9 +10,10 @@
  * notifications are always scoped to the caller.
  *
  * Routes (all POST, dispatched on the sub-path after /messages):
- *   /conversations   {}                          -> { conversations: [...] }
- *   /thread          { conversationId }          -> { messages: [...] }
+ *   /conversations   {}                          -> { conversations: [...] } (each with unread_count)
+ *   /thread          { conversationId }          -> { messages: [...] } (advances the read cursor)
  *   /send            { conversationId, body }    -> { message }
+ *   /unread-count    {}                          -> { count } (unread messages across all chats)
  *   /notifications   {}                          -> { notifications: [...] }
  *   /mark-read       { id? }                     -> { ok } (no id = mark all)
  *
@@ -76,6 +77,39 @@ async function requireMembership(conversationId: string, userId: string): Promis
   return data
 }
 
+/**
+ * Unread message counts per conversation: messages from OTHERS newer than
+ * the caller's read cursor. Counting happens in the database (head-only
+ * count queries) — no message rows are transferred, and results can't be
+ * silently truncated by PostgREST's max-rows cap.
+ */
+async function unreadCounts(userId: string, conversationIds: string[]): Promise<Map<string, number>> {
+  const counts = new Map<string, number>()
+  if (!conversationIds.length) return counts
+
+  const reads = await supabase
+    .from('conversation_reads')
+    .select('conversation_id, last_read_at')
+    .eq('user_id', userId)
+    .in('conversation_id', conversationIds)
+  if (reads.error) throw new Error(`Supabase error: ${reads.error.message}`)
+  const cursors = new Map((reads.data ?? []).map(r => [r.conversation_id, r.last_read_at]))
+
+  await Promise.all(conversationIds.map(async id => {
+    let query = supabase
+      .from('messages')
+      .select('*', { count: 'exact', head: true })
+      .eq('conversation_id', id)
+      .neq('sender_id', userId)
+    const cursor = cursors.get(id)
+    if (cursor) query = query.gt('created_at', cursor)
+    const { count, error } = await query
+    if (error) throw new Error(`Supabase error: ${error.message}`)
+    if (count) counts.set(id, count)
+  }))
+  return counts
+}
+
 async function listConversations(userId: string): Promise<Response> {
   const { data, error } = await supabase
     .from('conversations')
@@ -83,7 +117,11 @@ async function listConversations(userId: string): Promise<Response> {
     .or(`host_id.eq.${userId},guest_id.eq.${userId}`)
     .order('last_message_at', { ascending: false, nullsFirst: false })
   if (error) return fail(500, error.message)
-  return json({ conversations: data ?? [] })
+  const conversations = data ?? []
+  const counts = await unreadCounts(userId, conversations.map(c => c.id))
+  return json({
+    conversations: conversations.map(c => ({ ...c, unread_count: counts.get(c.id) ?? 0 })),
+  })
 }
 
 async function thread(userId: string, body: Record<string, unknown>): Promise<Response> {
@@ -97,7 +135,35 @@ async function thread(userId: string, body: Record<string, unknown>): Promise<Re
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: true })
   if (error) return fail(500, error.message)
-  return json({ messages: data ?? [] })
+
+  // Viewing the thread advances the caller's read cursor — only up to the
+  // newest message actually returned, never wall-clock time, so a message
+  // that lands between the SELECT above and this upsert stays unread.
+  const messages = data ?? []
+  const watermark = messages[messages.length - 1]?.created_at
+  if (watermark) {
+    const { error: readError } = await supabase
+      .from('conversation_reads')
+      .upsert(
+        { conversation_id: conversationId, user_id: userId, last_read_at: watermark },
+        { onConflict: 'conversation_id,user_id' },
+      )
+    if (readError) console.error('Could not update read cursor:', readError.message)
+  }
+
+  return json({ messages })
+}
+
+async function unreadCount(userId: string): Promise<Response> {
+  const { data, error } = await supabase
+    .from('conversations')
+    .select('id')
+    .or(`host_id.eq.${userId},guest_id.eq.${userId}`)
+  if (error) return fail(500, error.message)
+  const counts = await unreadCounts(userId, (data ?? []).map(c => c.id))
+  let total = 0
+  for (const n of counts.values()) total += n
+  return json({ count: total })
 }
 
 async function send(userId: string, body: Record<string, unknown>): Promise<Response> {
@@ -159,6 +225,8 @@ Deno.serve(async (req: Request) => {
         return await thread(userId, body)
       case 'send':
         return await send(userId, body)
+      case 'unread-count':
+        return await unreadCount(userId)
       case 'notifications':
         return await listNotifications(userId)
       case 'mark-read':
