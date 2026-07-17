@@ -19,6 +19,7 @@ import HostLandingPage from './pages/HostLandingPage'
 import HostListingPage from './pages/HostListingPage'
 import HostingHomePage from './pages/HostingHomePage'
 import MessagesPage from './pages/MessagesPage'
+import NotificationsPage from './pages/NotificationsPage'
 import SignInPage from './pages/SignInPage'
 import SignUpPage from './pages/SignUpPage'
 
@@ -62,6 +63,10 @@ export default function App() {
           <Route
             path="/profile"
             element={<ProtectedRoute><ProfilePage /></ProtectedRoute>}
+          />
+          <Route
+            path="/notifications"
+            element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>}
           />
           <Route
             path="/messages"

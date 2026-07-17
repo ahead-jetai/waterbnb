@@ -1,8 +1,39 @@
-import { useState } from 'react'
-import { Link, NavLink, useNavigate } from 'react-router-dom'
-import { SignedIn, SignedOut, useUser } from '@clerk/clerk-react'
+import { useEffect, useState } from 'react'
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { SignedIn, SignedOut, useAuth, useUser } from '@clerk/clerk-react'
 import { useUserMode } from '../hooks/useUserMode'
 import NotificationBell from './NotificationBell'
+import { fetchUnreadMessagesCount, startPolling } from '../utils/messagesApi'
+
+const UNREAD_POLL_MS = 20_000
+
+/** Unread chat count for the Messages nav tab; re-checks on navigation. */
+function useUnreadMessages(): number {
+  const { user } = useUser()
+  const { getToken } = useAuth()
+  const { pathname } = useLocation()
+  const [count, setCount] = useState(0)
+
+  useEffect(() => {
+    if (!user?.id) return
+    const poller = startPolling(async () => {
+      setCount(await fetchUnreadMessagesCount(getToken))
+    }, UNREAD_POLL_MS)
+    return () => poller.stop()
+    // pathname: opening a thread marks it read server-side, so re-check on navigation.
+  }, [user?.id, getToken, pathname])
+
+  return count
+}
+
+function UnreadBadge({ count }: { count: number }) {
+  if (count <= 0) return null
+  return (
+    <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full bg-brand text-white text-[10px] font-semibold px-1 align-middle">
+      {count > 9 ? '9+' : count}
+    </span>
+  )
+}
 
 /** Avatar that opens the WaterBnB profile page instead of Clerk's floating menu. */
 function ProfileLink({ onNavigate }: { onNavigate?: () => void }) {
@@ -61,6 +92,7 @@ function ModeSwitchButton({ className = '', onSwitched }: { className?: string; 
 export default function Header() {
   const [open, setOpen] = useState(false)
   const { mode } = useUserMode()
+  const unreadMessages = useUnreadMessages()
   const closeMenu = () => setOpen(false)
 
   const travelerLinks = [
@@ -102,6 +134,7 @@ export default function Header() {
             {links.map(({ to, label }) => (
               <NavLink key={to} to={to} className={navLinkClass}>
                 {label}
+                {to === '/messages' && <UnreadBadge count={unreadMessages} />}
               </NavLink>
             ))}
           </nav>
@@ -162,6 +195,7 @@ export default function Header() {
                   onClick={closeMenu}
                 >
                   {label}
+                  {to === '/messages' && <UnreadBadge count={unreadMessages} />}
                 </NavLink>
               ))}
               <ModeSwitchButton className="w-full mt-1" onSwitched={closeMenu} />
