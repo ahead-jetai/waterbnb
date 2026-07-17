@@ -65,15 +65,29 @@ export default function Carousel({ slides, intervalMs = 3500 }: Props) {
         onMouseLeave={() => setPaused(false)}
       >
         <ul className="relative h-64 sm:h-80 lg:h-96">
-          {slides.map((s, i) => (
-            <li
-              key={i}
-              className={`absolute inset-0 transition-opacity duration-700 ${i === index ? 'opacity-100' : 'opacity-0'}`}
-              aria-hidden={i !== index}
-            >
-              <img src={s.src} alt={s.alt} className="h-full w-full object-cover" />
-            </li>
-          ))}
+          {slides.map((s, i) => {
+            // Only the visible slide and its neighbors get an <img>, so first
+            // paint downloads at most three slides instead of the whole deck.
+            const nearActive =
+              i === index || i === (index + 1) % count || i === (index - 1 + count) % count
+            return (
+              <li
+                key={i}
+                className={`absolute inset-0 transition-opacity duration-700 ${i === index ? 'opacity-100' : 'opacity-0'}`}
+                aria-hidden={i !== index}
+              >
+                {nearActive && (
+                  <img
+                    src={s.src}
+                    alt={s.alt}
+                    loading={i === index ? 'eager' : 'lazy'}
+                    decoding="async"
+                    className="h-full w-full object-cover"
+                  />
+                )}
+              </li>
+            )
+          })}
         </ul>
 
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/20 to-black/10" />

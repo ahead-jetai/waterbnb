@@ -13,6 +13,7 @@ export default function Hero({ ctas }: HeroProps) {
         <img
           src="/images/water-bnb-hero-carousel-4.png"
           alt="Yacht anchored on clear blue water"
+          fetchPriority="high"
           className="h-full w-full object-cover"
         />
         <div className="absolute inset-0 bg-gradient-to-br from-muted/80 via-muted/55 to-black/20" />
