@@ -3,14 +3,14 @@ import { useEffect, useState } from 'react'
 import type { Booking, Listing } from '../bookingTypes'
 import { fetchListing } from '../utils/listingsApi'
 import { fetchCheckoutSession } from '../utils/paymentsApi'
-import { createBooking, fetchBookingByReference } from '../utils/bookingsApi'
+import { rowToBooking } from '../utils/bookingsApi'
 import { calculateNights, formatDateLong, pluralize } from '../utils/booking'
 import { ListingSummaryCard, InfoRow, PriceSummary } from '../components/booking'
 import CheckCircleIcon from '../components/icons/CheckCircleIcon'
 
 const NEXT_STEPS = [
   'Check your email for your Stripe payment receipt',
-  'Your host will contact you within 24 hours with check-in instructions',
+  'Chat with your host in Messages — your booking conversation is already open',
   'Save your booking reference number for future correspondence',
   'Contact support if you need to make any changes to your reservation'
 ] as const
@@ -24,6 +24,7 @@ export default function BookingConfirmationPage() {
   const [booking, setBooking] = useState<Booking | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  const [conversationId, setConversationId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!listingId) return
@@ -32,8 +33,10 @@ export default function BookingConfirmationPage() {
     return () => { cancelled = true }
   }, [listingId])
 
-  // Verify the Stripe Checkout session, then persist the booking exactly once
-  // (page reloads find the existing booking by its payment reference).
+  // Verify the Stripe Checkout session. Booking persistence, the host↔guest
+  // conversation, and both notifications all happen server-side in the
+  // payments edge function (triggered by the Stripe webhook, and again here
+  // idempotently) — nothing depends on this page surviving.
   useEffect(() => {
     if (!sessionId) {
       setError('Missing payment session. If you completed a payment, check My Trips.')
@@ -45,35 +48,14 @@ export default function BookingConfirmationPage() {
     async function confirm(id: string) {
       try {
         const session = await fetchCheckoutSession(id)
-        if (!session.paid) {
+        if (!session.paid || !session.booking) {
           throw new Error('This payment has not been completed. You have not been charged.')
         }
-
-        const existing = await fetchBookingByReference(session.reference)
-        if (existing) {
-          if (!cancelled) setBooking(existing)
-          return
+        if (!cancelled) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          setBooking(rowToBooking(session.booking as any))
+          setConversationId(session.conversationId)
         }
-
-        const m = session.metadata
-        const saved = await createBooking({
-          listingId: m.listing_id,
-          guestId: m.guest_id,
-          checkIn: m.check_in,
-          checkOut: m.check_out,
-          guests: Number(m.guests),
-          guestDetails: {
-            name: m.guest_name,
-            email: m.guest_email,
-            phone: m.guest_phone,
-            specialRequests: m.special_requests || undefined,
-          },
-          subtotal: Number(m.subtotal_cents) / 100,
-          serviceFee: Number(m.service_fee_cents) / 100,
-          total: session.amountTotal / 100,
-          bookingReference: session.reference,
-        })
-        if (!cancelled) setBooking(saved)
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Could not confirm your booking.')
       } finally {
@@ -198,7 +180,12 @@ export default function BookingConfirmationPage() {
 
         {/* Actions */}
         <div className="flex gap-4 justify-center">
-          <Link to="/trips" className="btn btn-primary no-underline">
+          {conversationId && (
+            <Link to={`/messages/${conversationId}`} className="btn btn-primary no-underline">
+              Message your host
+            </Link>
+          )}
+          <Link to="/trips" className={`btn no-underline ${conversationId ? 'btn-secondary' : 'btn-primary'}`}>
             View My Trips
           </Link>
           <button

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { SignedIn, SignedOut, useUser } from '@clerk/clerk-react'
 import { useUserMode } from '../hooks/useUserMode'
+import NotificationBell from './NotificationBell'
 
 /** Avatar that opens the WaterBnB profile page instead of Clerk's floating menu. */
 function ProfileLink({ onNavigate }: { onNavigate?: () => void }) {
@@ -65,11 +66,13 @@ export default function Header() {
   const travelerLinks = [
     { to: '/', label: 'Explore' },
     { to: '/trips', label: 'My Trips' },
+    { to: '/messages', label: 'Messages' },
   ]
   const hostLinks = [
     { to: '/hosting', label: 'Dashboard' },
     { to: '/host/list', label: 'Create listing' },
     { to: '/host/payments', label: 'Payments' },
+    { to: '/messages', label: 'Messages' },
   ]
   const links = mode === 'hosting' ? hostLinks : travelerLinks
 
@@ -114,6 +117,7 @@ export default function Header() {
             </Link>
           </SignedOut>
           <SignedIn>
+            <NotificationBell />
             <ModeSwitchButton />
             <ProfileLink />
           </SignedIn>

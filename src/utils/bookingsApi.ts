@@ -69,7 +69,8 @@ function listingRowToListing(row: ListingRow): Listing {
   }
 }
 
-function rowToBooking(row: BookingRow): Booking {
+/** Map a raw bookings row (e.g. returned by the payments edge function) to a Booking. */
+export function rowToBooking(row: BookingRow): Booking {
   return {
     id: row.id,
     listingId: row.listing_id,

@@ -14,7 +14,8 @@
  *   /connect-status    { hostId }                     -> { hasAccount, ... }
  *   /create-product    { listingId }                  -> { productId }
  *   /checkout          { listingId, guestId, ... }    -> { url }
- *   /checkout-session  { sessionId }                  -> { paid, ... }
+ *   /checkout-session  { sessionId }                  -> { paid, booking, conversationId, ... }
+ *   /webhook           Stripe event (checkout.session.completed)
  *   /earnings          { hostId }                     -> { hasAccount, balance, transfers, ... }
  *
  * Required secrets (Dashboard -> Edge Functions -> Secrets, or `supabase secrets set`):
@@ -332,19 +333,153 @@ async function checkout(body: Record<string, unknown>): Promise<Response> {
   return json({ url: session.url })
 }
 
-// After Stripe redirects back, the app verifies the session was paid and
-// reads back the booking details from the session metadata.
+// --- Step 4b: finalize a paid session ----------------------------------------
+// Persists everything a successful payment implies: the booking row, the
+// host<->guest conversation (seeded with system messages), and notifications
+// for both sides. Runs server-side and idempotently (unique constraints on
+// bookings.booking_reference and conversations.booking_id), so it is safe to
+// trigger from BOTH the Stripe webhook and the guest's redirect — whichever
+// arrives first wins, and neither depends on the guest's browser surviving.
+// deno-lint-ignore no-explicit-any
+async function finalizePaidSession(session: any): Promise<{ booking: any; conversationId: string | null }> {
+  const m = session.metadata ?? {}
+  const reference = 'WB' + String(session.id).slice(-8).toUpperCase()
+
+  // 1. Booking — insert once per payment reference.
+  let { data: booking } = await supabase
+    .from('bookings')
+    .select('*')
+    .eq('booking_reference', reference)
+    .maybeSingle()
+  if (!booking) {
+    const inserted = await supabase
+      .from('bookings')
+      .insert({
+        listing_id: m.listing_id,
+        guest_id: m.guest_id,
+        check_in: m.check_in,
+        check_out: m.check_out,
+        guests: Number(m.guests),
+        status: 'confirmed',
+        guest_name: m.guest_name,
+        guest_email: m.guest_email,
+        guest_phone: m.guest_phone,
+        special_requests: m.special_requests || null,
+        subtotal: Number(m.subtotal_cents) / 100,
+        service_fee: Number(m.service_fee_cents) / 100,
+        total: (session.amount_total ?? 0) / 100,
+        booking_reference: reference,
+      })
+      .select()
+      .single()
+    if (inserted.error) {
+      if (inserted.error.code !== '23505') throw new Error(`Could not save booking: ${inserted.error.message}`)
+      // Concurrent finalize (webhook + redirect) won the insert — reuse it.
+      booking = (await supabase.from('bookings').select('*').eq('booking_reference', reference).maybeSingle()).data
+    } else {
+      booking = inserted.data
+    }
+  }
+  if (!booking) throw new Error('Booking could not be persisted')
+
+  // 2. Conversation — one per booking, seeded only by whoever creates it.
+  const { data: listing } = await supabase.from('listings').select('*').eq('id', booking.listing_id).maybeSingle()
+  if (!listing?.host_id) return { booking, conversationId: null }
+
+  const existing = await supabase.from('conversations').select('id').eq('booking_id', booking.id).maybeSingle()
+  if (existing.data) return { booking, conversationId: existing.data.id }
+
+  const created = await supabase
+    .from('conversations')
+    .insert({
+      booking_id: booking.id,
+      listing_id: listing.id,
+      host_id: listing.host_id,
+      guest_id: booking.guest_id,
+    })
+    .select('id')
+    .single()
+  if (created.error) {
+    if (created.error.code !== '23505') throw new Error(`Could not create conversation: ${created.error.message}`)
+    const again = await supabase.from('conversations').select('id').eq('booking_id', booking.id).maybeSingle()
+    return { booking, conversationId: again.data?.id ?? null }
+  }
+  const conversationId = created.data.id as string
+
+  // 3. Seed messages + notify both sides.
+  const { data: hostProfile } = await supabase.from('host_profiles').select('name').eq('id', listing.host_id).maybeSingle()
+  const hostName = hostProfile?.name || 'your host'
+  const nights = Math.max(1, Math.round((new Date(booking.check_out).getTime() - new Date(booking.check_in).getTime()) / 86_400_000))
+  const nightsLabel = `${nights} night${nights === 1 ? '' : 's'}`
+  const checkInLong = new Date(booking.check_in + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+  const checkOutLong = new Date(booking.check_out + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+
+  const seeds = [
+    `Welcome aboard! This is your chat for ${listing.title}. ${booking.guest_name} and ${hostName} can use it to coordinate check-in, directions, and anything else about the stay.`,
+    [
+      `Booking details — ref ${booking.booking_reference}`,
+      `⛵ ${listing.title}, ${listing.location}`,
+      `📅 Check-in ${checkInLong} → check-out ${checkOutLong} (${nightsLabel})`,
+      `👥 ${booking.guests} guest${booking.guests === 1 ? '' : 's'}`,
+      booking.special_requests ? `📝 Special requests: ${booking.special_requests}` : null,
+    ].filter(Boolean).join('\n'),
+  ]
+  const seeded = await supabase
+    .from('messages')
+    .insert(seeds.map(body => ({ conversation_id: conversationId, sender_id: 'system', body })))
+  if (seeded.error) console.error('Could not seed conversation:', seeded.error.message)
+
+  const notified = await supabase.from('notifications').insert([
+    {
+      user_id: listing.host_id,
+      title: 'You have a new guest arriving! 🎉',
+      body: `${booking.guest_name} booked ${listing.title} for ${nightsLabel}, checking in ${checkInLong}.`,
+      link: `/messages/${conversationId}`,
+    },
+    {
+      user_id: booking.guest_id,
+      title: "Congrats! You're all set ⚓",
+      body: `Your booking at ${listing.title} in ${listing.location} is confirmed for ${checkInLong}. Say hello to your host in chat!`,
+      link: `/messages/${conversationId}`,
+    },
+  ])
+  if (notified.error) console.error('Could not create notifications:', notified.error.message)
+
+  return { booking, conversationId }
+}
+
+// After Stripe redirects back, the app verifies the session was paid; the
+// booking/conversation are finalized here too in case the webhook lost the race.
 async function checkoutSession(body: Record<string, unknown>): Promise<Response> {
   const { sessionId } = body as { sessionId?: string }
   if (!sessionId) return fail(400, 'sessionId is required')
 
   const session = await stripeClient.checkout.sessions.retrieve(sessionId)
+  const paid = session.payment_status === 'paid'
+  const finalized = paid ? await finalizePaidSession(session) : null
   return json({
-    paid: session.payment_status === 'paid',
+    paid,
     amountTotal: session.amount_total,
     metadata: session.metadata,
     reference: 'WB' + String(sessionId).slice(-8).toUpperCase(),
+    booking: finalized?.booking ?? null,
+    conversationId: finalized?.conversationId ?? null,
   })
+}
+
+// Stripe webhook: finalizes the booking even if the guest never returns to
+// the app. The payload is treated as an untrusted hint — we only take the
+// session id from it and re-fetch the session from Stripe's API, so a forged
+// event cannot inject data (it can only ask us to finalize a genuinely paid
+// session, which is idempotent and harmless).
+async function webhook(body: Record<string, unknown>): Promise<Response> {
+  // deno-lint-ignore no-explicit-any
+  const event = body as any
+  if (event?.type === 'checkout.session.completed' && event?.data?.object?.id) {
+    const session = await stripeClient.checkout.sessions.retrieve(String(event.data.object.id))
+    if (session.payment_status === 'paid') await finalizePaidSession(session)
+  }
+  return json({ received: true })
 }
 
 // --- Step 5: earnings --------------------------------------------------------
@@ -424,6 +559,8 @@ Deno.serve(async (req: Request) => {
         return await checkout(body)
       case 'checkout-session':
         return await checkoutSession(body)
+      case 'webhook':
+        return await webhook(body)
       case 'earnings':
         return await earnings(body)
       default:

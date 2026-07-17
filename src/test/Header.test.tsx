@@ -27,6 +27,11 @@ vi.mock('@clerk/clerk-react', () => ({
       : null,
     isLoaded: true,
   }),
+  useAuth: () => ({
+    isSignedIn: clerkState.signedIn,
+    isLoaded: true,
+    getToken: async () => null, // NotificationBell polls silently fail without a token
+  }),
 }))
 
 import Header from '../components/Header'

@@ -63,6 +63,10 @@ export type CheckoutSessionResult = {
   amountTotal: number
   reference: string
   metadata: Record<string, string>
+  /** Booking row persisted server-side by the edge function (null if unpaid). */
+  booking: Record<string, unknown> | null
+  /** Host↔guest chat opened server-side for this booking, if any. */
+  conversationId: string | null
 }
 
 /** Verify a Checkout session after Stripe redirects back to the app. */
