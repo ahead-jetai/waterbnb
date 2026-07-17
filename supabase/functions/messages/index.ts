@@ -79,30 +79,34 @@ async function requireMembership(conversationId: string, userId: string): Promis
 
 /**
  * Unread message counts per conversation: messages from OTHERS newer than
- * the caller's read cursor. Only ids/timestamps are fetched, never bodies.
+ * the caller's read cursor. Counting happens in the database (head-only
+ * count queries) — no message rows are transferred, and results can't be
+ * silently truncated by PostgREST's max-rows cap.
  */
 async function unreadCounts(userId: string, conversationIds: string[]): Promise<Map<string, number>> {
   const counts = new Map<string, number>()
   if (!conversationIds.length) return counts
-  const [reads, msgs] = await Promise.all([
-    supabase
-      .from('conversation_reads')
-      .select('conversation_id, last_read_at')
-      .eq('user_id', userId)
-      .in('conversation_id', conversationIds),
-    supabase
-      .from('messages')
-      .select('conversation_id, created_at')
-      .in('conversation_id', conversationIds)
-      .neq('sender_id', userId),
-  ])
+
+  const reads = await supabase
+    .from('conversation_reads')
+    .select('conversation_id, last_read_at')
+    .eq('user_id', userId)
+    .in('conversation_id', conversationIds)
+  if (reads.error) throw new Error(`Supabase error: ${reads.error.message}`)
   const cursors = new Map((reads.data ?? []).map(r => [r.conversation_id, r.last_read_at]))
-  for (const m of msgs.data ?? []) {
-    const seen = cursors.get(m.conversation_id)
-    if (!seen || m.created_at > seen) {
-      counts.set(m.conversation_id, (counts.get(m.conversation_id) ?? 0) + 1)
-    }
-  }
+
+  await Promise.all(conversationIds.map(async id => {
+    let query = supabase
+      .from('messages')
+      .select('*', { count: 'exact', head: true })
+      .eq('conversation_id', id)
+      .neq('sender_id', userId)
+    const cursor = cursors.get(id)
+    if (cursor) query = query.gt('created_at', cursor)
+    const { count, error } = await query
+    if (error) throw new Error(`Supabase error: ${error.message}`)
+    if (count) counts.set(id, count)
+  }))
   return counts
 }
 
@@ -132,13 +136,22 @@ async function thread(userId: string, body: Record<string, unknown>): Promise<Re
     .order('created_at', { ascending: true })
   if (error) return fail(500, error.message)
 
-  // Viewing the thread advances the caller's read cursor.
-  const { error: readError } = await supabase
-    .from('conversation_reads')
-    .upsert({ conversation_id: conversationId, user_id: userId, last_read_at: new Date().toISOString() })
-  if (readError) console.error('Could not update read cursor:', readError.message)
+  // Viewing the thread advances the caller's read cursor — only up to the
+  // newest message actually returned, never wall-clock time, so a message
+  // that lands between the SELECT above and this upsert stays unread.
+  const messages = data ?? []
+  const watermark = messages[messages.length - 1]?.created_at
+  if (watermark) {
+    const { error: readError } = await supabase
+      .from('conversation_reads')
+      .upsert(
+        { conversation_id: conversationId, user_id: userId, last_read_at: watermark },
+        { onConflict: 'conversation_id,user_id' },
+      )
+    if (readError) console.error('Could not update read cursor:', readError.message)
+  }
 
-  return json({ messages: data ?? [] })
+  return json({ messages })
 }
 
 async function unreadCount(userId: string): Promise<Response> {
