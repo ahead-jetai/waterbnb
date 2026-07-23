@@ -8,15 +8,38 @@ import {
   type ConnectStatus,
 } from '../utils/paymentsApi'
 
-function StatusPill({ ok, okLabel, pendingLabel }: { ok: boolean; okLabel: string; pendingLabel: string }) {
+function AccountStatus({ status }: { status: ConnectStatus | null }) {
+  if (!status || !status.hasAccount) {
+    return (
+      <div className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500">
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+        </svg>
+        Not connected
+      </div>
+    )
+  }
+
+  const ready = status.readyToReceivePayments && status.onboardingComplete
+
+  if (ready) {
+    return (
+      <div className="inline-flex items-center gap-1.5 text-sm font-medium text-accent-dark">
+        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+        </svg>
+        Active
+      </div>
+    )
+  }
+
   return (
-    <span
-      className={`text-xs font-medium px-2.5 py-1 rounded-full ${
-        ok ? 'bg-accent/10 text-accent-dark' : 'bg-warning/10 text-warning'
-      }`}
-    >
-      {ok ? okLabel : pendingLabel}
-    </span>
+    <div className="inline-flex items-center gap-1.5 text-sm font-medium text-warning">
+      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+      </svg>
+      Action required
+    </div>
   )
 }
 
@@ -98,20 +121,16 @@ export default function HostPaymentsPage() {
             <div className="card p-6">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <h2 className="font-semibold text-base mb-1">Stripe account</h2>
+                  <div className="flex items-center gap-3 mb-1">
+                    <h2 className="font-semibold text-base">Stripe account</h2>
+                    {status && <AccountStatus status={status} />}
+                  </div>
                   <p className="text-sm text-slate-500">
                     Guests pay WaterBnB at checkout; your nightly earnings (minus card
                     processing fees) are transferred to your Stripe account, and WaterBnB
                     keeps its 12% service fee.
                   </p>
                 </div>
-                {status?.hasAccount && (
-                  <StatusPill
-                    ok={!!ready}
-                    okLabel="Ready to receive payments"
-                    pendingLabel="Setup incomplete"
-                  />
-                )}
               </div>
 
               <div className="mt-4 space-y-2 text-sm">
