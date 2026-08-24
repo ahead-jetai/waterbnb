@@ -29,6 +29,7 @@ type ListingRow = {
   reviews: number | null
   image: string | null
   host_id: string | null
+  auto_approve_bookings?: boolean | null
 }
 
 type BookingRow = {
@@ -66,6 +67,7 @@ function listingRowToListing(row: ListingRow): Listing {
     capacity: row.capacity,
     boatType: row.boat_type,
     hostId: row.host_id ?? undefined,
+    autoApproveBookings: row.auto_approve_bookings ?? true,
   }
 }
 
@@ -198,6 +200,19 @@ export async function fetchBookingByReference(reference: string): Promise<Bookin
   return data ? rowToBooking(data as BookingRow) : null
 }
 
+export async function fetchBookingById(id: string): Promise<Booking | null> {
+  const { data, error } = await supabase
+    .from('bookings')
+    .select('*, listing:listings(*)')
+    .eq('id', id)
+    .maybeSingle()
+  if (error) {
+    console.error('Failed to look up booking:', error.message)
+    return null
+  }
+  return data ? rowToBooking(data as BookingRow) : null
+}
+
 /** All bookings for a guest, newest first, with the related listing embedded. */
 export async function fetchGuestBookings(guestId: string): Promise<Booking[]> {
   const { data, error } = await supabase
@@ -222,6 +237,21 @@ export async function fetchHostBookings(hostId: string): Promise<Booking[]> {
     .order('check_in', { ascending: true })
   if (error) {
     console.error('Failed to fetch host bookings:', error.message)
+    return []
+  }
+  return (data as BookingRow[]).map(rowToBooking)
+}
+
+/** Pending booking requests on a host's listings, oldest first, with the listing embedded. */
+export async function fetchHostBookingRequests(hostId: string): Promise<Booking[]> {
+  const { data, error } = await supabase
+    .from('bookings')
+    .select('*, listing:listings!inner(*)')
+    .eq('listing.host_id', hostId)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: true })
+  if (error) {
+    console.error('Failed to fetch host booking requests:', error.message)
     return []
   }
   return (data as BookingRow[]).map(rowToBooking)

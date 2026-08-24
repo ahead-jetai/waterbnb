@@ -4,7 +4,8 @@ import { useUser } from '@clerk/clerk-react'
 import { useUserMode } from '../hooks/useUserMode'
 import { fetchHostListings } from '../utils/listingsApi'
 import { fetchHostAnalytics, type HostAnalytics } from '../utils/hostAnalyticsApi'
-import { fetchHostBookings } from '../utils/bookingsApi'
+import { fetchHostBookingRequests, fetchHostBookings } from '../utils/bookingsApi'
+import { approveBookingRequest, declineBookingRequest } from '../utils/paymentsApi'
 import { calculateNights, formatDateLong, pluralize } from '../utils/booking'
 import type { Booking, Listing } from '../bookingTypes'
 
@@ -16,6 +17,8 @@ export default function HostingHomePage() {
   const [myListings, setMyListings] = useState<Listing[]>([])
   const [analytics, setAnalytics] = useState<HostAnalytics | null>(null)
   const [reservations, setReservations] = useState<Booking[]>([])
+  const [requests, setRequests] = useState<Booking[]>([])
+  const [busyRequestId, setBusyRequestId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!user?.id) return
@@ -28,11 +31,44 @@ export default function HostingHomePage() {
         .catch(() => {}) // dashboard cards just stay at their placeholders
     })
     fetchHostBookings(user.id).then(bs => { if (!cancelled) setReservations(bs) })
+    fetchHostBookingRequests(user.id).then(bs => { if (!cancelled) setRequests(bs) })
     return () => { cancelled = true }
   }, [user?.id])
 
   const today = new Date().toISOString().slice(0, 10)
   const upcoming = reservations.filter(b => b.checkOut >= today)
+
+  const refreshBookings = async () => {
+    if (!user?.id) return
+    const [confirmed, pending] = await Promise.all([
+      fetchHostBookings(user.id),
+      fetchHostBookingRequests(user.id),
+    ])
+    setReservations(confirmed)
+    setRequests(pending)
+  }
+
+  const handleApprove = async (bookingId: string) => {
+    if (!user?.id) return
+    setBusyRequestId(bookingId)
+    try {
+      await approveBookingRequest(user.id, bookingId)
+      await refreshBookings()
+    } finally {
+      setBusyRequestId(null)
+    }
+  }
+
+  const handleDecline = async (bookingId: string) => {
+    if (!user?.id) return
+    setBusyRequestId(bookingId)
+    try {
+      await declineBookingRequest(user.id, bookingId)
+      await refreshBookings()
+    } finally {
+      setBusyRequestId(null)
+    }
+  }
 
   // If the user lands here while in traveling mode, send them home.
   if (isLoaded && mode !== 'hosting') {
@@ -71,6 +107,57 @@ export default function HostingHomePage() {
           View earnings & analytics →
         </Link>
       </section>
+
+      {requests.length > 0 && (
+        <section aria-labelledby="requests-heading" className="container-p pb-8">
+          <h2 id="requests-heading" className="font-display text-2xl font-medium text-muted mb-2">
+            Booking requests
+          </h2>
+          <p className="text-sm text-slate-500 mb-4">
+            Approving a request asks the guest to pay. The booking is confirmed and chat opens only after payment succeeds.
+          </p>
+          <ul role="list" className="space-y-4">
+            {requests.map(b => {
+              const nights = calculateNights(b.checkIn, b.checkOut)
+              const busy = busyRequestId === b.id
+              return (
+                <li key={b.id} className="card p-5 ring-1 ring-amber-200 bg-amber-50/30">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-900 truncate">
+                        {b.listing ? b.listing.title : 'Listing'}
+                      </p>
+                      <p className="text-sm text-slate-500 mt-0.5">
+                        {formatDateLong(b.checkIn)} → {formatDateLong(b.checkOut)} · {nights} {pluralize(nights, 'night')} · {b.guests} {pluralize(b.guests, 'guest')}
+                      </p>
+                      <p className="text-sm text-slate-600 mt-2">
+                        {b.guestDetails.name} · {b.guestDetails.email} · {b.guestDetails.phone || 'No phone'}
+                      </p>
+                      {b.guestDetails.specialRequests && (
+                        <p className="mt-3 text-sm text-slate-600 bg-white/70 rounded-lg px-3 py-2">
+                          <span className="font-medium text-slate-700">Special requests: </span>
+                          {b.guestDetails.specialRequests}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-2 min-w-36">
+                      <p className="font-display font-semibold text-brand text-right">
+                        ${b.subtotal.toLocaleString('en-US')}
+                      </p>
+                      <button disabled={busy || Boolean(busyRequestId)} onClick={() => handleApprove(b.id)} className="btn btn-primary text-sm py-1.5 px-3 disabled:opacity-40">
+                        {busy ? 'Working…' : 'Approve request'}
+                      </button>
+                      <button disabled={busy || Boolean(busyRequestId)} onClick={() => handleDecline(b.id)} className="btn btn-secondary text-sm py-1.5 px-3 disabled:opacity-40">
+                        Decline
+                      </button>
+                    </div>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      )}
 
       {upcoming.length > 0 && (
         <section aria-labelledby="reservations-heading" className="container-p pb-8">

@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import StarRating from './StarRating'
 import type { Listing } from '../bookingTypes'
+import { bookingModeLabel } from '../utils/bookingMode'
 
 type Props = {
   item: Listing
@@ -41,6 +42,9 @@ export default function ListingCard({ item }: Props) {
           </p>
           <StarRating value={item.rating} count={item.reviews} />
           <div className="mt-0.5 flex flex-wrap gap-1.5">
+            <span className="text-xs rounded-full bg-slate-100 text-slate-600 px-2 py-0.5 font-medium">
+              {bookingModeLabel(item)}
+            </span>
             {item.tags.slice(0, 3).map((t) => (
               <span key={t} className="text-xs rounded-full bg-brand/10 text-brand px-2 py-0.5 font-medium">
                 {t}

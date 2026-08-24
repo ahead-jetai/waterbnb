@@ -23,6 +23,7 @@ export type ListingInput = {
   description: string
   pricePerNight: number
   hostId?: string
+  autoApproveBookings?: boolean
 }
 
 type ListingRow = {
@@ -39,6 +40,7 @@ type ListingRow = {
   reviews: number | null
   image: string | null
   host_id: string | null
+  auto_approve_bookings?: boolean | null
   created_at: string
 }
 
@@ -57,6 +59,7 @@ function rowToListing(row: ListingRow): Listing {
     capacity: row.capacity,
     boatType: row.boat_type,
     hostId: row.host_id ?? undefined,
+    autoApproveBookings: row.auto_approve_bookings ?? true,
   }
 }
 
@@ -71,6 +74,7 @@ function inputToRow(input: ListingInput) {
     description: input.description,
     price_per_night: input.pricePerNight,
     host_id: input.hostId ?? null,
+    auto_approve_bookings: input.autoApproveBookings ?? true,
     // keep legacy columns in sync
     image: input.images[0] ?? '',
     tags: input.amenities,

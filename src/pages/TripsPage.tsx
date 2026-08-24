@@ -9,6 +9,15 @@ function isUpcoming(booking: Booking): boolean {
   return booking.status === 'confirmed' && new Date(booking.checkOut) >= new Date()
 }
 
+function statusLabel(booking: Booking): string {
+  if (booking.status === 'pending') return 'Pending host approval'
+  if (booking.status === 'approved_payment_pending') return 'Approved — payment due'
+  if (booking.status === 'declined') return 'Declined'
+  if (booking.status === 'expired') return 'Expired'
+  if (booking.status === 'cancelled') return 'Cancelled'
+  return isUpcoming(booking) ? 'Upcoming' : 'Completed'
+}
+
 function TripCard({ booking, onCancel }: { booking: Booking; onCancel: (id: string) => void }) {
   const { listing } = booking
   const nights = calculateNights(booking.checkIn, booking.checkOut)
@@ -39,12 +48,14 @@ function TripCard({ booking, onCancel }: { booking: Booking; onCancel: (id: stri
           </div>
           <span
             className={`text-xs font-medium px-2.5 py-1 rounded-full flex-shrink-0 ${
-              booking.status === 'cancelled'
+              booking.status === 'cancelled' || booking.status === 'declined' || booking.status === 'expired'
                 ? 'bg-slate-100 text-slate-500'
-                : 'bg-brand/10 text-brand'
+                : booking.status === 'pending' || booking.status === 'approved_payment_pending'
+                  ? 'bg-amber-100 text-amber-700'
+                  : 'bg-brand/10 text-brand'
             }`}
           >
-            {booking.status === 'cancelled' ? 'Cancelled' : isUpcoming(booking) ? 'Upcoming' : 'Completed'}
+            {statusLabel(booking)}
           </span>
         </div>
 
@@ -54,6 +65,15 @@ function TripCard({ booking, onCancel }: { booking: Booking; onCancel: (id: stri
           <div className="font-medium text-slate-800">Total: ${booking.total.toFixed(2)}</div>
           <div className="text-xs text-slate-400">Ref: {booking.bookingReference}</div>
         </div>
+
+        {booking.status === 'approved_payment_pending' && (
+          <Link
+            to={`/booking/${booking.listingId}/payment?booking_id=${booking.id}`}
+            className="btn btn-primary no-underline mt-3 inline-flex text-sm py-1.5 px-3"
+          >
+            Pay now to confirm
+          </Link>
+        )}
 
         {canCancel && (
           <button
@@ -95,8 +115,9 @@ export default function TripsPage() {
     }
   }
 
+  const pending = bookings.filter(b => b.status === 'pending' || b.status === 'approved_payment_pending')
   const upcoming = bookings.filter(isUpcoming)
-  const past = bookings.filter(b => !isUpcoming(b))
+  const past = bookings.filter(b => b.status !== 'pending' && b.status !== 'approved_payment_pending' && !isUpcoming(b))
 
   if (loading) {
     return (
@@ -117,6 +138,17 @@ export default function TripsPage() {
         </div>
       ) : (
         <div className="space-y-10">
+          <section>
+            <h2 className="font-semibold text-lg mb-3">Pending requests</h2>
+            {pending.length === 0 ? (
+              <p className="text-sm text-slate-400">No pending requests.</p>
+            ) : (
+              <div className="space-y-4">
+                {pending.map(b => <TripCard key={b.id} booking={b} onCancel={handleCancel} />)}
+              </div>
+            )}
+          </section>
+
           <section>
             <h2 className="font-semibold text-lg mb-3">Upcoming</h2>
             {upcoming.length === 0 ? (
