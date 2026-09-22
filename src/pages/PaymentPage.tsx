@@ -1,4 +1,4 @@
-import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { useUser } from '@clerk/clerk-react'
 import type { BookingData, Listing } from '../bookingTypes'
@@ -15,6 +15,7 @@ export default function PaymentPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const approvedBookingId = searchParams.get('booking_id')
+  const wasCancelled = Boolean(searchParams.get('cancelled'))
   const { user } = useUser()
   const [bookingData, setBookingData] = useState<BookingData | null>(null)
   const [listing, setListing] = useState<Listing | null>(null)
@@ -26,7 +27,9 @@ export default function PaymentPage() {
   useEffect(() => {
     if (!listingId) return
     let cancelled = false
-    fetchListing(listingId).then(l => { if (!cancelled) setListing(l) })
+    fetchListing(listingId)
+      .then(l => { if (!cancelled) setListing(l) })
+      .catch(() => { if (!cancelled) setError('Could not load this listing. Please try again.') })
     return () => { cancelled = true }
   }, [listingId])
 
@@ -39,10 +42,12 @@ export default function PaymentPage() {
         return
       }
       setBookingData(data)
-    } else {
+    } else if (!wasCancelled) {
+      // Returning from a cancelled Stripe Checkout has no router state; stay
+      // here so the "you have not been charged" message can render.
       navigate(`/listing/${listingId}`)
     }
-  }, [approvedBookingId, location.state, listingId, navigate])
+  }, [approvedBookingId, location.state, listingId, navigate, wasCancelled])
 
   useEffect(() => {
     if (!approvedBookingId) return
@@ -60,12 +65,32 @@ export default function PaymentPage() {
         guestDetails: booking.guestDetails,
       })
       if (!listing && booking.listing) setListing(booking.listing)
+    }).catch(() => {
+      if (!cancelled) setError('Could not load this booking request. Please try again.')
     })
     return () => { cancelled = true }
   }, [approvedBookingId, listing])
 
   if (!bookingData || !listing) {
-    return null
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="container-p py-16 max-w-lg text-center">
+          {error ? (
+            <>
+              <p className="text-sm text-danger mb-6" role="alert">{error}</p>
+              <div className="flex justify-center gap-3">
+                <Link to="/trips" className="btn btn-secondary no-underline">Back to trips</Link>
+                {listingId && (
+                  <Link to={`/listing/${listingId}`} className="btn btn-primary no-underline">Back to listing</Link>
+                )}
+              </div>
+            </>
+          ) : (
+            <p className="text-slate-500">Loading…</p>
+          )}
+        </div>
+      </div>
+    )
   }
 
   const checkInDate = new Date(bookingData.dates.checkIn)

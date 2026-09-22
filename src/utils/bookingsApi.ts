@@ -1,19 +1,6 @@
 import { supabase } from './supabase'
 import { fetchBlockedRanges } from './availabilityApi'
-import type { Booking, BookingStatus, GuestDetails, Listing } from '../bookingTypes'
-
-export type CreateBookingInput = {
-  listingId: string
-  guestId: string
-  checkIn: string
-  checkOut: string
-  guests: number
-  guestDetails: GuestDetails
-  subtotal: number
-  serviceFee: number
-  total: number
-  bookingReference: string
-}
+import type { Booking, BookingStatus, Listing } from '../bookingTypes'
 
 type ListingRow = {
   id: string
@@ -137,53 +124,6 @@ export async function fetchUnavailableRanges(listingId: string): Promise<Unavail
 export async function isRangeAvailable(listingId: string, checkIn: string, checkOut: string): Promise<boolean> {
   const unavailable = await fetchUnavailableRanges(listingId)
   return !unavailable.some(b => rangesOverlap(checkIn, checkOut, b.checkIn, b.checkOut))
-}
-
-export async function createBooking(input: CreateBookingInput): Promise<Booking> {
-  // Idempotency: this payment may already have been saved (page reload,
-  // StrictMode double effect). One payment reference = one booking.
-  const existing = await fetchBookingByReference(input.bookingReference)
-  if (existing) return existing
-
-  // Re-check availability right before insert to close the race between selecting dates and paying.
-  const available = await isRangeAvailable(input.listingId, input.checkIn, input.checkOut)
-  if (!available) {
-    // The "conflict" may be this very payment saved by a concurrent run.
-    const dup = await fetchBookingByReference(input.bookingReference)
-    if (dup) return dup
-    throw new Error('Sorry, those dates are no longer available. Please choose different dates.')
-  }
-
-  const { data, error } = await supabase
-    .from('bookings')
-    .insert({
-      listing_id: input.listingId,
-      guest_id: input.guestId,
-      check_in: input.checkIn,
-      check_out: input.checkOut,
-      guests: input.guests,
-      status: 'confirmed',
-      guest_name: input.guestDetails.name,
-      guest_email: input.guestDetails.email,
-      guest_phone: input.guestDetails.phone,
-      special_requests: input.guestDetails.specialRequests || null,
-      subtotal: input.subtotal,
-      service_fee: input.serviceFee,
-      total: input.total,
-      booking_reference: input.bookingReference,
-    })
-    .select()
-    .single()
-  if (error) {
-    // Unique violation on booking_reference: another concurrent run (e.g.
-    // StrictMode's doubled effect) already saved this payment — reuse it.
-    if (error.code === '23505') {
-      const existing = await fetchBookingByReference(input.bookingReference)
-      if (existing) return existing
-    }
-    throw new Error(`Could not save booking: ${error.message}`)
-  }
-  return rowToBooking(data as BookingRow)
 }
 
 /** Booking previously saved for a payment reference — used to avoid duplicates on confirmation reloads. */

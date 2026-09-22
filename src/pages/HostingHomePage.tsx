@@ -19,6 +19,7 @@ export default function HostingHomePage() {
   const [reservations, setReservations] = useState<Booking[]>([])
   const [requests, setRequests] = useState<Booking[]>([])
   const [busyRequestId, setBusyRequestId] = useState<string | null>(null)
+  const [requestError, setRequestError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!user?.id) return
@@ -51,9 +52,12 @@ export default function HostingHomePage() {
   const handleApprove = async (bookingId: string) => {
     if (!user?.id) return
     setBusyRequestId(bookingId)
+    setRequestError(null)
     try {
       await approveBookingRequest(user.id, bookingId)
       await refreshBookings()
+    } catch (err) {
+      setRequestError(err instanceof Error ? err.message : 'Could not approve this request. Please try again.')
     } finally {
       setBusyRequestId(null)
     }
@@ -62,9 +66,12 @@ export default function HostingHomePage() {
   const handleDecline = async (bookingId: string) => {
     if (!user?.id) return
     setBusyRequestId(bookingId)
+    setRequestError(null)
     try {
       await declineBookingRequest(user.id, bookingId)
       await refreshBookings()
+    } catch (err) {
+      setRequestError(err instanceof Error ? err.message : 'Could not decline this request. Please try again.')
     } finally {
       setBusyRequestId(null)
     }
@@ -116,6 +123,9 @@ export default function HostingHomePage() {
           <p className="text-sm text-slate-500 mb-4">
             Approving a request asks the guest to pay. The booking is confirmed and chat opens only after payment succeeds.
           </p>
+          {requestError && (
+            <p className="text-sm text-danger mb-4" role="alert">{requestError}</p>
+          )}
           <ul role="list" className="space-y-4">
             {requests.map(b => {
               const nights = calculateNights(b.checkIn, b.checkOut)
