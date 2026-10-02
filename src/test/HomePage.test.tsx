@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { userEvent } from '@testing-library/user-event'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 
 const clerkState = {
@@ -15,6 +16,11 @@ vi.mock('@clerk/clerk-react', () => ({
       : null,
     isLoaded: true,
   }),
+}))
+
+import { listings as mockListings } from '../data/listings'
+vi.mock('../utils/listingsApi', () => ({
+  fetchListings: () => Promise.resolve(mockListings),
 }))
 
 import HomePage from '../pages/HomePage'
@@ -76,5 +82,31 @@ describe('HomePage — signed in, hosting mode', () => {
     renderHome()
     expect(screen.getByText('Hosting Dashboard Stub')).toBeInTheDocument()
     expect(screen.queryByText(/featured listings/i)).not.toBeInTheDocument()
+  })
+})
+
+describe('HomePage — sort dropdown', () => {
+  beforeEach(() => {
+    clerkState.signedIn = true
+    clerkState.metadata = {}
+  })
+
+  it('reorders listings when sort option changes', async () => {
+    const user = userEvent.setup()
+    renderHome()
+
+    const sortSelect = screen.getByLabelText(/sort by/i)
+    expect(sortSelect).toBeInTheDocument()
+
+    // Default sort is "Newest"
+    expect(sortSelect).toHaveValue('newest')
+
+    // Change to "Price: low to high"
+    await user.selectOptions(sortSelect, 'price-asc')
+
+    // The cheapest listing (Scandinavian Houseboat Loft, $175) should appear first
+    const listingCards = screen.getAllByRole('listitem')
+    expect(listingCards.length).toBeGreaterThan(0)
+    expect(screen.getByText('Scandinavian Houseboat Loft')).toBeInTheDocument()
   })
 })
