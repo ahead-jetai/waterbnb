@@ -11,6 +11,8 @@ export type ListingFilters = {
   boatType?: string
   checkIn?: string
   checkOut?: string
+  // Client-side sort option for the listing grid on the home page (Newest, Price, Rating)
+  sort?: 'newest' | 'price-asc' | 'price-desc' | 'rating'
 }
 
 export type ListingInput = {

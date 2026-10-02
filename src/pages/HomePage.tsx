@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { useAuth, useUser } from '@clerk/clerk-react'
 import Hero from '../components/Hero'
@@ -78,6 +78,19 @@ function TravelerHome() {
     return () => { cancelled = true }
   }, [filters])
 
+  const sortedListings = useMemo(() => {
+    const sorted = [...listings]
+    const sort = filters.sort ?? 'newest'
+    if (sort === 'price-asc') {
+      sorted.sort((a, b) => a.pricePerNight - b.pricePerNight)
+    } else if (sort === 'price-desc') {
+      sorted.sort((a, b) => b.pricePerNight - a.pricePerNight)
+    } else if (sort === 'rating') {
+      sorted.sort((a, b) => b.rating - a.rating)
+    }
+    return sorted
+  }, [listings, filters.sort])
+
   return (
     <main>
       <section className="container-p pt-10 pb-2">
@@ -103,11 +116,11 @@ function TravelerHome() {
         <SearchFilters filters={filters} onChange={setFilters} />
         {loading ? (
           <div className="text-slate-400 text-sm py-8 text-center">Loading listings…</div>
-        ) : listings.length === 0 ? (
+        ) : sortedListings.length === 0 ? (
           <div className="text-slate-400 text-sm py-8 text-center">No listings match your search.</div>
         ) : (
           <ul role="list" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {listings.map((l) => (
+            {sortedListings.map((l) => (
               <li key={l.id}>
                 <ListingCard item={l} />
               </li>

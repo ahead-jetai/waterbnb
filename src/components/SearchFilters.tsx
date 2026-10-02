@@ -10,7 +10,7 @@ export default function SearchFilters({ filters, onChange }: SearchFiltersProps)
   const update = (patch: Partial<ListingFilters>) => onChange({ ...filters, ...patch })
 
   const hasActiveFilters =
-    !!filters.location || !!filters.boatType || filters.minPrice != null || filters.maxPrice != null || !!filters.checkIn || !!filters.checkOut
+    !!filters.location || !!filters.boatType || filters.minPrice != null || filters.maxPrice != null || !!filters.checkIn || !!filters.checkOut || !!filters.sort
 
   return (
     <div className="card p-4 mb-6">
@@ -84,6 +84,20 @@ export default function SearchFilters({ filters, onChange }: SearchFiltersProps)
             {BOAT_TYPE_OPTIONS.map(opt => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="filter-sort" className="block text-xs font-medium text-slate-500 mb-1">Sort by</label>
+          <select
+            id="filter-sort"
+            value={filters.sort ?? 'newest'}
+            onChange={(e) => update({ sort: e.target.value as ListingFilters['sort'] })}
+            className="input max-w-xs"
+          >
+            <option value="newest">Newest</option>
+            <option value="price-asc">Price: low to high</option>
+            <option value="price-desc">Price: high to low</option>
+            <option value="rating">Highest rated</option>
           </select>
         </div>
         {hasActiveFilters && (
