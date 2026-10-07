@@ -15,9 +15,15 @@ function renderDemo(path = '/demo') {
   )
 }
 
+/** Simulate the browser switching tabs: jsdom's `document.hidden` is read-only, so shadow it per test. */
+function setTabHidden(hidden: boolean) {
+  Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden })
+  act(() => { document.dispatchEvent(new Event('visibilitychange')) })
+}
+
 describe('Demo walkthrough', () => {
   beforeEach(() => { vi.useFakeTimers() })
-  afterEach(() => { cleanup(); vi.useRealTimers() })
+  afterEach(() => { cleanup(); vi.useRealTimers(); Reflect.deleteProperty(document, 'hidden') })
 
   it('runs the complete story automatically, including approval before checkout and the host payout', () => {
     renderDemo()
@@ -83,5 +89,29 @@ describe('Demo walkthrough', () => {
     renderDemo()
     expect(screen.getByRole('heading', { name: demoSteps[0].title })).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('Ready to play')
+  })
+  it('pauses automatic playback when the tab is hidden and leaves a demo that is not playing alone', () => {
+    renderDemo()
+    // Hiding the tab before the demo starts must not turn "Start demo" into "Resume demo".
+    setTabHidden(true)
+    expect(screen.getByRole('status')).toHaveTextContent('Ready to play')
+    expect(screen.getByRole('button', { name: 'Start demo' })).toBeInTheDocument()
+
+    setTabHidden(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Start demo' }))
+    act(() => vi.advanceTimersByTime(6000))
+    expect(screen.getByRole('heading', { name: demoSteps[1].title })).toBeInTheDocument()
+
+    setTabHidden(true)
+    expect(screen.getByRole('status')).toHaveTextContent('Paused')
+    act(() => vi.advanceTimersByTime(60000))
+    expect(screen.getByRole('heading', { name: demoSteps[1].title })).toBeInTheDocument()
+
+    // Returning to the tab leaves the choice to continue with the viewer.
+    setTabHidden(false)
+    expect(screen.getByRole('status')).toHaveTextContent('Paused')
+    fireEvent.click(screen.getByRole('button', { name: 'Resume demo' }))
+    act(() => vi.advanceTimersByTime(6000))
+    expect(screen.getByRole('heading', { name: demoSteps[2].title })).toBeInTheDocument()
   })
 })
