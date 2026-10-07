@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom'
+
 export default function Footer() {
   const year = new Date().getFullYear()
   const links = [
@@ -27,6 +29,7 @@ export default function Footer() {
         </div>
         <nav aria-label="Footer" className="sm:justify-self-end lg:justify-self-center">
           <ul className="flex flex-wrap gap-x-6 gap-y-3 text-sm">
+            <li><Link to="/demo" className="text-white/60 hover:text-white no-underline transition-colors duration-150">Try the demo</Link></li>
             {links.map((l) => (
               <li key={l.label}>
                 <a className="text-white/60 hover:text-white no-underline transition-colors duration-150" href={l.href}>

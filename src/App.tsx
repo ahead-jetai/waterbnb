@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
 import Header from './components/Header'
 import Footer from './components/Footer'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -22,97 +22,105 @@ import MessagesPage from './pages/MessagesPage'
 import NotificationsPage from './pages/NotificationsPage'
 import SignInPage from './pages/SignInPage'
 import SignUpPage from './pages/SignUpPage'
+import DemoPage from './pages/DemoPage'
 
 export default function App() {
+  return <BrowserRouter><AppContent /></BrowserRouter>
+}
+
+function AppContent() {
+  const { pathname } = useLocation()
+  // The demo replaces the live shell, including profile sync and notification
+  // polling, so even an authenticated visitor only interacts with mock data.
+  if (pathname === '/demo' || pathname === '/demo/') return <DemoPage />
+
   return (
-    <BrowserRouter>
-      <div className="min-h-full flex flex-col">
-        <HostProfileSync />
-        <Header />
-        <Routes>
-          {/* Public routes — everything else requires sign-in */}
-          <Route path="/" element={<HomePage />} />
-          <Route path="/sign-in" element={<SignInPage />} />
-          <Route path="/sign-up" element={<SignUpPage />} />
+    <div className="min-h-full flex flex-col">
+      <HostProfileSync />
+      <Header />
+      <Routes>
+        {/* Public routes — everything else requires sign-in */}
+        <Route path="/" element={<HomePage />} />
+        <Route path="/sign-in" element={<SignInPage />} />
+        <Route path="/sign-up" element={<SignUpPage />} />
 
-          {/* Traveler routes */}
-          <Route
-            path="/listing/:id"
-            element={<ProtectedRoute><ListingDetailPage /></ProtectedRoute>}
-          />
-          <Route
-            path="/booking/:listingId/review"
-            element={<ProtectedRoute><BookingReviewPage /></ProtectedRoute>}
-          />
-          <Route
-            path="/booking/:listingId/guest-details"
-            element={<ProtectedRoute><GuestDetailsPage /></ProtectedRoute>}
-          />
-          <Route
-            path="/booking/:listingId/payment"
-            element={<ProtectedRoute><PaymentPage /></ProtectedRoute>}
-          />
-          <Route
-            path="/booking/:listingId/confirmation"
-            element={<ProtectedRoute><BookingConfirmationPage /></ProtectedRoute>}
-          />
-          <Route
-            path="/trips"
-            element={<ProtectedRoute><TripsPage /></ProtectedRoute>}
-          />
-          <Route
-            path="/profile"
-            element={<ProtectedRoute><ProfilePage /></ProtectedRoute>}
-          />
-          <Route
-            path="/notifications"
-            element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>}
-          />
-          <Route
-            path="/messages"
-            element={<ProtectedRoute><MessagesPage /></ProtectedRoute>}
-          />
-          <Route
-            path="/messages/:conversationId"
-            element={<ProtectedRoute><MessagesPage /></ProtectedRoute>}
-          />
-          <Route
-            path="/hosts/:hostId"
-            element={<ProtectedRoute><HostProfilePage /></ProtectedRoute>}
-          />
+        {/* Traveler routes */}
+        <Route
+          path="/listing/:id"
+          element={<ProtectedRoute><ListingDetailPage /></ProtectedRoute>}
+        />
+        <Route
+          path="/booking/:listingId/review"
+          element={<ProtectedRoute><BookingReviewPage /></ProtectedRoute>}
+        />
+        <Route
+          path="/booking/:listingId/guest-details"
+          element={<ProtectedRoute><GuestDetailsPage /></ProtectedRoute>}
+        />
+        <Route
+          path="/booking/:listingId/payment"
+          element={<ProtectedRoute><PaymentPage /></ProtectedRoute>}
+        />
+        <Route
+          path="/booking/:listingId/confirmation"
+          element={<ProtectedRoute><BookingConfirmationPage /></ProtectedRoute>}
+        />
+        <Route
+          path="/trips"
+          element={<ProtectedRoute><TripsPage /></ProtectedRoute>}
+        />
+        <Route
+          path="/profile"
+          element={<ProtectedRoute><ProfilePage /></ProtectedRoute>}
+        />
+        <Route
+          path="/notifications"
+          element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>}
+        />
+        <Route
+          path="/messages"
+          element={<ProtectedRoute><MessagesPage /></ProtectedRoute>}
+        />
+        <Route
+          path="/messages/:conversationId"
+          element={<ProtectedRoute><MessagesPage /></ProtectedRoute>}
+        />
+        <Route
+          path="/hosts/:hostId"
+          element={<ProtectedRoute><HostProfilePage /></ProtectedRoute>}
+        />
 
-          {/* Hosting routes */}
-          <Route
-            path="/hosting"
-            element={<ProtectedRoute><HostingHomePage /></ProtectedRoute>}
-          />
-          <Route
-            path="/host"
-            element={<ProtectedRoute><HostLandingPage /></ProtectedRoute>}
-          />
-          <Route
-            path="/host/list"
-            element={<ProtectedRoute><HostListingPage /></ProtectedRoute>}
-          />
-          <Route
-            path="/host/list/:id/edit"
-            element={<ProtectedRoute><HostListingPage /></ProtectedRoute>}
-          />
-          <Route
-            path="/host/list/:id/availability"
-            element={<ProtectedRoute><HostAvailabilityPage /></ProtectedRoute>}
-          />
-          <Route
-            path="/host/earnings"
-            element={<ProtectedRoute><HostEarningsPage /></ProtectedRoute>}
-          />
-          <Route
-            path="/host/payments"
-            element={<ProtectedRoute><HostPaymentsPage /></ProtectedRoute>}
-          />
-        </Routes>
-        <Footer />
-      </div>
-    </BrowserRouter>
+        {/* Hosting routes */}
+        <Route
+          path="/hosting"
+          element={<ProtectedRoute><HostingHomePage /></ProtectedRoute>}
+        />
+        <Route
+          path="/host"
+          element={<ProtectedRoute><HostLandingPage /></ProtectedRoute>}
+        />
+        <Route
+          path="/host/list"
+          element={<ProtectedRoute><HostListingPage /></ProtectedRoute>}
+        />
+        <Route
+          path="/host/list/:id/edit"
+          element={<ProtectedRoute><HostListingPage /></ProtectedRoute>}
+        />
+        <Route
+          path="/host/list/:id/availability"
+          element={<ProtectedRoute><HostAvailabilityPage /></ProtectedRoute>}
+        />
+        <Route
+          path="/host/earnings"
+          element={<ProtectedRoute><HostEarningsPage /></ProtectedRoute>}
+        />
+        <Route
+          path="/host/payments"
+          element={<ProtectedRoute><HostPaymentsPage /></ProtectedRoute>}
+        />
+      </Routes>
+      <Footer />
+    </div>
   )
 }
