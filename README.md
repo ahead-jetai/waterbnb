@@ -15,7 +15,7 @@ A vacation rental platform specializing in unique water-based accommodations suc
 
 ### Prerequisites
 
-- Node.js (v18 or higher recommended)
+- Node.js 24 LTS recommended (verified with 24.13.0); the existing dependency set requires at least Node.js 22.13.0 on the Node.js 22 line
 - npm
 
 ### Installation
