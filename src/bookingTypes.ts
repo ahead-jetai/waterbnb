@@ -12,6 +12,7 @@ export type Listing = {
   capacity?: number
   boatType?: string
   hostId?: string
+  autoApproveBookings?: boolean
 }
 
 export type BookingDates = {
@@ -41,7 +42,7 @@ export type BookingData = {
   paymentDetails?: PaymentDetails
 }
 
-export type BookingStatus = 'confirmed' | 'cancelled'
+export type BookingStatus = 'pending' | 'approved_payment_pending' | 'confirmed' | 'declined' | 'cancelled' | 'expired'
 
 /** A persisted booking, as stored in Supabase. */
 export type Booking = {

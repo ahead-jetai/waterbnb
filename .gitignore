@@ -25,3 +25,6 @@ dist-ssr
 
 # Local env with secrets
 .env
+
+# Supabase
+supabase/.temp/

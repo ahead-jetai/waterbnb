@@ -3,6 +3,7 @@ import { fetchListing } from '../utils/listingsApi'
 import type { BookingData, Listing } from '../bookingTypes'
 import { useEffect, useState } from 'react'
 import { BookingProgress } from '../components/booking'
+import { bookingModeLabel, bookingModeSummary } from '../utils/bookingMode'
 
 export default function BookingReviewPage() {
   const { listingId } = useParams<{ listingId: string }>()
@@ -83,6 +84,10 @@ export default function BookingReviewPage() {
                 <span className="text-amber-500">★</span>
                 <span className="font-semibold">{listing.rating}</span>
                 <span className="text-slate-500">({listing.reviews} reviews)</span>
+              </div>
+              <div className="mt-4 rounded-lg bg-slate-50 px-3 py-2 text-sm">
+                <p className="font-medium text-slate-800">{bookingModeLabel(listing)}</p>
+                <p className="text-slate-500 mt-0.5">{bookingModeSummary(listing)}</p>
               </div>
             </div>
 

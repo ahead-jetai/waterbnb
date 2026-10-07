@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useUser } from '@clerk/clerk-react'
 import { uploadListingImage, deleteListingImage } from '../utils/supabase'
 import { createListing, updateListing, fetchListing } from '../utils/listingsApi'
+import { setListingAutoApprove } from '../utils/paymentsApi'
 import type { Listing } from '../bookingTypes'
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -16,6 +17,7 @@ interface ListingDraft {
   images: string[]
   description: string
   pricePerNight: number
+  autoApproveBookings: boolean
 }
 
 const INITIAL_DRAFT: ListingDraft = {
@@ -27,6 +29,7 @@ const INITIAL_DRAFT: ListingDraft = {
   images: [],
   description: '',
   pricePerNight: 200,
+  autoApproveBookings: true,
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -518,6 +521,35 @@ function Step4({ draft, onChange, onSubmit, onBack, submitting, submitError, isE
         </div>
       </div>
 
+      <div className="card p-6 mb-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h3 className="font-semibold text-sm text-slate-700">Booking approval</h3>
+            <p className="text-sm text-slate-500 mt-1 max-w-lg">
+              Instant booking confirms paid guests immediately and opens chat. Host review keeps paid requests pending until you approve one.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => onChange({ ...draft, autoApproveBookings: !draft.autoApproveBookings })}
+            className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
+              draft.autoApproveBookings ? 'bg-brand' : 'bg-slate-300'
+            }`}
+            aria-pressed={draft.autoApproveBookings}
+            aria-label="Toggle instant booking"
+          >
+            <span
+              className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                draft.autoApproveBookings ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+        <p className="mt-4 text-sm font-medium text-slate-700">
+          {draft.autoApproveBookings ? 'Instant booking is on' : 'Host review is on'}
+        </p>
+      </div>
+
       {/* Summary preview */}
       <div className="card p-6 mb-6">
         <h3 className="font-semibold text-sm text-slate-700 mb-4">Listing preview</h3>
@@ -652,6 +684,7 @@ export default function HostListingPage() {
           images: listing.images ?? (listing.image ? [listing.image] : []),
           description: listing.description ?? '',
           pricePerNight: listing.pricePerNight,
+          autoApproveBookings: listing.autoApproveBookings ?? true,
         })
       }
       setLoading(false)
@@ -665,6 +698,7 @@ export default function HostListingPage() {
     try {
       const input = { ...draft, hostId: user?.id }
       const listing = editId ? await updateListing(editId, input) : await createListing(input)
+      if (user?.id) await setListingAutoApprove(user.id, listing.id, draft.autoApproveBookings)
       setSaved(listing)
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')

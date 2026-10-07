@@ -13,8 +13,13 @@
  *   /onboarding-link   { hostId }                     -> { url }
  *   /connect-status    { hostId }                     -> { hasAccount, ... }
  *   /create-product    { listingId }                  -> { productId }
+ *   /booking-request   { listingId, guestId, ... }    -> { booking }
  *   /checkout          { listingId, guestId, ... }    -> { url }
+ *   /approved-request-checkout { bookingId, guestId } -> { url }
  *   /checkout-session  { sessionId }                  -> { paid, booking, conversationId, ... }
+ *   /approve-booking   { hostId, bookingId }          -> { booking, conversationId }
+ *   /decline-booking   { hostId, bookingId }          -> { booking }
+ *   /listing-auto-approve { hostId, listingId, enabled } -> { ok }
  *   /webhook           Stripe event (checkout.session.completed)
  *   /earnings          { hostId }                     -> { hasAccount, balance, transfers, ... }
  *
@@ -23,6 +28,7 @@
  *   CLIENT_URL         — where the SPA runs (e.g. http://localhost:5173).
  * SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are injected automatically.
  */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import Stripe from 'npm:stripe@22'
 import { createClient } from 'npm:@supabase/supabase-js@2'
 
@@ -60,6 +66,22 @@ function json(body: unknown, status = 200): Response {
 
 function fail(status: number, message: string): Response {
   return json({ error: message }, status)
+}
+
+function nightsBetween(checkIn: string, checkOut: string): number {
+  return Math.ceil((new Date(checkOut).getTime() - new Date(checkIn).getTime()) / 86_400_000)
+}
+
+function calculateAmounts(listing: any, checkIn: string, checkOut: string) {
+  const nights = nightsBetween(checkIn, checkOut)
+  if (nights <= 0) throw new Error('checkOut must be after checkIn')
+  const nightlyCents = Math.round(Number(listing.price_per_night) * 100)
+  const subtotalCents = nightlyCents * nights
+  const serviceFeeCents = Math.round(subtotalCents * 0.12)
+  const totalCents = subtotalCents + serviceFeeCents
+  const stripeFeeCents = Math.round(totalCents * 0.029) + 30
+  const applicationFeeCents = serviceFeeCents + stripeFeeCents
+  return { nights, nightlyCents, subtotalCents, serviceFeeCents, totalCents, stripeFeeCents, applicationFeeCents }
 }
 
 /** Look up the Stripe account id we stored for a host (Clerk user id). */
@@ -233,7 +255,79 @@ async function createProduct(body: Record<string, unknown>): Promise<Response> {
   return json({ productId })
 }
 
-// --- Step 4: checkout -------------------------------------------------------
+// --- Step 4a: host-review booking requests ---------------------------------
+// For manual-review listings, guests should not be charged until the host
+// accepts. This creates an unpaid pending request and notifies both sides.
+async function bookingRequest(body: Record<string, unknown>): Promise<Response> {
+  const { listingId, guestId, checkIn, checkOut, guests, guestDetails } = body as {
+    listingId?: string
+    guestId?: string
+    checkIn?: string
+    checkOut?: string
+    guests?: number
+    guestDetails?: { name?: string; email?: string; phone?: string; specialRequests?: string }
+  }
+  if (!listingId || !guestId || !checkIn || !checkOut || !guests || !guestDetails?.email) {
+    return fail(400, 'listingId, guestId, checkIn, checkOut, guests, and guestDetails are required')
+  }
+
+  const { data: listing, error } = await supabase
+    .from('listings')
+    .select('*')
+    .eq('id', listingId)
+    .maybeSingle()
+  if (error || !listing) return fail(404, 'Listing not found')
+  if (!listing.host_id) return fail(400, 'This listing has no host')
+  if (listing.auto_approve_bookings ?? true) {
+    return fail(409, 'This listing is instant booking. Please use checkout.')
+  }
+
+  const amounts = calculateAmounts(listing, checkIn, checkOut)
+  const reference = 'RQ' + crypto.randomUUID().slice(0, 8).toUpperCase()
+  const { data: booking, error: inserted } = await supabase
+    .from('bookings')
+    .insert({
+      listing_id: listingId,
+      guest_id: guestId,
+      check_in: checkIn,
+      check_out: checkOut,
+      guests: Number(guests),
+      status: 'pending',
+      guest_name: guestDetails.name ?? '',
+      guest_email: guestDetails.email,
+      guest_phone: guestDetails.phone ?? '',
+      special_requests: guestDetails.specialRequests || null,
+      subtotal: amounts.subtotalCents / 100,
+      service_fee: amounts.serviceFeeCents / 100,
+      total: amounts.totalCents / 100,
+      booking_reference: reference,
+    })
+    .select()
+    .single()
+  if (inserted) throw new Error(`Could not save booking request: ${inserted.message}`)
+
+  const checkInLong = new Date(checkIn + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+  const nightsLabel = `${amounts.nights} night${amounts.nights === 1 ? '' : 's'}`
+  const notified = await supabase.from('notifications').insert([
+    {
+      user_id: listing.host_id,
+      title: 'New booking request',
+      body: `${guestDetails.name ?? 'A guest'} requested ${listing.title} for ${nightsLabel}, checking in ${checkInLong}. Review it on your host dashboard.`,
+      link: '/hosting',
+    },
+    {
+      user_id: guestId,
+      title: 'Booking request sent',
+      body: `Your request for ${listing.title} is waiting for host approval. You will only pay if the host accepts.`,
+      link: '/trips',
+    },
+  ])
+  if (notified.error) console.error('Could not create request notifications:', notified.error.message)
+
+  return json({ booking })
+}
+
+// --- Step 4b: checkout -------------------------------------------------------
 // Guests pay through Stripe hosted Checkout. This is a destination charge:
 // the full amount is charged by the platform, the host's share flows to
 // their connected account, and WaterBnB retains the service fee plus the
@@ -258,6 +352,9 @@ async function checkout(body: Record<string, unknown>): Promise<Response> {
     .maybeSingle()
   if (error || !listing) return fail(404, 'Listing not found')
   if (!listing.host_id) return fail(400, 'This listing has no host to pay')
+  if (!(listing.auto_approve_bookings ?? true)) {
+    return fail(409, 'This listing requires host approval before payment. Submit a booking request first.')
+  }
 
   const accountId = await getHostAccountId(listing.host_id)
   if (!accountId) {
@@ -265,17 +362,7 @@ async function checkout(body: Record<string, unknown>): Promise<Response> {
   }
 
   // Server-side price computation — never trust amounts from the browser.
-  const nights = Math.ceil((new Date(checkOut).getTime() - new Date(checkIn).getTime()) / 86_400_000)
-  if (nights <= 0) return fail(400, 'checkOut must be after checkIn')
-  const nightlyCents = Math.round(Number(listing.price_per_night) * 100)
-  const subtotalCents = nightlyCents * nights
-  const serviceFeeCents = Math.round(subtotalCents * 0.12) // WaterBnB's 12% cut
-  const totalCents = subtotalCents + serviceFeeCents
-  // Estimated Stripe processing fee (US card: 2.9% + 30¢). Included in the
-  // application fee so the host bears it and WaterBnB nets its full 12%:
-  // host receives subtotal − Stripe fee, platform keeps the service fee.
-  const stripeFeeCents = Math.round(totalCents * 0.029) + 30
-  const applicationFeeCents = serviceFeeCents + stripeFeeCents
+  const { nights, nightlyCents, subtotalCents, serviceFeeCents, totalCents, stripeFeeCents, applicationFeeCents } = calculateAmounts(listing, checkIn, checkOut)
 
   const productId = await ensureProductForListing(listing)
 
@@ -333,6 +420,81 @@ async function checkout(body: Record<string, unknown>): Promise<Response> {
   return json({ url: session.url })
 }
 
+async function approvedRequestCheckout(body: Record<string, unknown>): Promise<Response> {
+  const { bookingId, guestId } = body as { bookingId?: string; guestId?: string }
+  if (!bookingId || !guestId) return fail(400, 'bookingId and guestId are required')
+
+  const { data: booking, error } = await supabase
+    .from('bookings')
+    .select('*, listing:listings!inner(*)')
+    .eq('id', bookingId)
+    .eq('guest_id', guestId)
+    .eq('status', 'approved_payment_pending')
+    .maybeSingle()
+  if (error) throw new Error(`Could not load approved request: ${error.message}`)
+  if (!booking) return fail(404, 'Approved booking request not found')
+
+  const listing = booking.listing
+  if (!listing?.host_id) return fail(400, 'This listing has no host to pay')
+  const accountId = await getHostAccountId(listing.host_id)
+  if (!accountId) {
+    return fail(409, 'This host has not set up payments yet. Please try another listing.')
+  }
+
+  const { nights, nightlyCents, subtotalCents, serviceFeeCents, totalCents, stripeFeeCents, applicationFeeCents } =
+    calculateAmounts(listing, booking.check_in, booking.check_out)
+  const productId = await ensureProductForListing(listing)
+
+  const session = await stripeClient.checkout.sessions.create({
+    mode: 'payment',
+    customer_email: booking.guest_email,
+    line_items: [
+      {
+        price_data: {
+          currency: 'usd',
+          product: productId,
+          unit_amount: nightlyCents,
+        },
+        quantity: nights,
+      },
+      {
+        price_data: {
+          currency: 'usd',
+          product_data: { name: 'WaterBnB service fee' },
+          unit_amount: serviceFeeCents,
+        },
+        quantity: 1,
+      },
+    ],
+    payment_intent_data: {
+      application_fee_amount: applicationFeeCents,
+      transfer_data: {
+        destination: accountId,
+      },
+    },
+    metadata: {
+      booking_id: booking.id,
+      listing_id: booking.listing_id,
+      guest_id: booking.guest_id,
+      check_in: booking.check_in,
+      check_out: booking.check_out,
+      guests: String(booking.guests),
+      guest_name: booking.guest_name,
+      guest_email: booking.guest_email,
+      guest_phone: booking.guest_phone,
+      special_requests: booking.special_requests ?? '',
+      subtotal_cents: String(subtotalCents),
+      service_fee_cents: String(serviceFeeCents),
+      stripe_fee_cents: String(stripeFeeCents),
+      host_net_cents: String(totalCents - applicationFeeCents),
+    },
+    success_url: `${clientUrl}/booking/${booking.listing_id}/confirmation?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${clientUrl}/booking/${booking.listing_id}/payment?booking_id=${booking.id}&cancelled=1`,
+  })
+
+  return json({ url: session.url })
+}
+
 // --- Step 4b: finalize a paid session ----------------------------------------
 // Persists everything a successful payment implies: the booking row, the
 // host<->guest conversation (seeded with system messages), and notifications
@@ -352,32 +514,50 @@ async function finalizePaidSession(session: any): Promise<{ booking: any; conver
     .eq('booking_reference', reference)
     .maybeSingle()
   if (!booking) {
-    const inserted = await supabase
-      .from('bookings')
-      .insert({
-        listing_id: m.listing_id,
-        guest_id: m.guest_id,
-        check_in: m.check_in,
-        check_out: m.check_out,
-        guests: Number(m.guests),
-        status: 'confirmed',
-        guest_name: m.guest_name,
-        guest_email: m.guest_email,
-        guest_phone: m.guest_phone,
-        special_requests: m.special_requests || null,
-        subtotal: Number(m.subtotal_cents) / 100,
-        service_fee: Number(m.service_fee_cents) / 100,
-        total: (session.amount_total ?? 0) / 100,
-        booking_reference: reference,
-      })
-      .select()
-      .single()
-    if (inserted.error) {
-      if (inserted.error.code !== '23505') throw new Error(`Could not save booking: ${inserted.error.message}`)
-      // Concurrent finalize (webhook + redirect) won the insert — reuse it.
-      booking = (await supabase.from('bookings').select('*').eq('booking_reference', reference).maybeSingle()).data
+    if (m.booking_id) {
+      const updated = await supabase
+        .from('bookings')
+        .update({
+          status: 'confirmed',
+          booking_reference: reference,
+          subtotal: Number(m.subtotal_cents) / 100,
+          service_fee: Number(m.service_fee_cents) / 100,
+          total: (session.amount_total ?? 0) / 100,
+        })
+        .eq('id', m.booking_id)
+        .eq('status', 'approved_payment_pending')
+        .select('*')
+        .single()
+      if (updated.error) throw new Error(`Could not confirm approved request: ${updated.error.message}`)
+      booking = updated.data
     } else {
-      booking = inserted.data
+      const inserted = await supabase
+        .from('bookings')
+        .insert({
+          listing_id: m.listing_id,
+          guest_id: m.guest_id,
+          check_in: m.check_in,
+          check_out: m.check_out,
+          guests: Number(m.guests),
+          status: 'confirmed',
+          guest_name: m.guest_name,
+          guest_email: m.guest_email,
+          guest_phone: m.guest_phone,
+          special_requests: m.special_requests || null,
+          subtotal: Number(m.subtotal_cents) / 100,
+          service_fee: Number(m.service_fee_cents) / 100,
+          total: (session.amount_total ?? 0) / 100,
+          booking_reference: reference,
+        })
+        .select()
+        .single()
+      if (inserted.error) {
+        if (inserted.error.code !== '23505') throw new Error(`Could not save booking: ${inserted.error.message}`)
+        // Concurrent finalize (webhook + redirect) won the insert — reuse it.
+        booking = (await supabase.from('bookings').select('*').eq('booking_reference', reference).maybeSingle()).data
+      } else {
+        booking = inserted.data
+      }
     }
   }
   if (!booking) throw new Error('Booking could not be persisted')
@@ -386,6 +566,13 @@ async function finalizePaidSession(session: any): Promise<{ booking: any; conver
   const { data: listing } = await supabase.from('listings').select('*').eq('id', booking.listing_id).maybeSingle()
   if (!listing?.host_id) return { booking, conversationId: null }
 
+  return await openConfirmedBooking(booking, listing)
+}
+
+// Creates the host<->guest conversation and confirmed notifications for an
+// already-confirmed booking. Idempotent through conversations.booking_id.
+// deno-lint-ignore no-explicit-any
+async function openConfirmedBooking(booking: any, listing: any): Promise<{ booking: any; conversationId: string | null }> {
   const existing = await supabase.from('conversations').select('id').eq('booking_id', booking.id).maybeSingle()
   if (existing.data) return { booking, conversationId: existing.data.id }
 
@@ -446,6 +633,150 @@ async function finalizePaidSession(session: any): Promise<{ booking: any; conver
   if (notified.error) console.error('Could not create notifications:', notified.error.message)
 
   return { booking, conversationId }
+}
+
+function rangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
+  return new Date(aStart) < new Date(bEnd) && new Date(bStart) < new Date(aEnd)
+}
+
+// Host accepts a pending request. This asks the guest to pay, and clears
+// overlapping pending requests for the same listing so only one guest proceeds.
+async function approveBooking(body: Record<string, unknown>): Promise<Response> {
+  const { hostId, bookingId } = body as { hostId?: string; bookingId?: string }
+  if (!hostId || !bookingId) return fail(400, 'hostId and bookingId are required')
+
+  const { data: booking, error } = await supabase
+    .from('bookings')
+    .select('*, listing:listings!inner(*)')
+    .eq('id', bookingId)
+    .eq('status', 'pending')
+    .eq('listing.host_id', hostId)
+    .maybeSingle()
+  if (error) throw new Error(`Could not load request: ${error.message}`)
+  if (!booking) return fail(404, 'Pending booking request not found')
+
+  const { data: approved, error: updateError } = await supabase
+    .from('bookings')
+    .update({ status: 'approved_payment_pending' })
+    .eq('id', booking.id)
+    .eq('status', 'pending')
+    .select('*')
+    .single()
+  if (updateError) throw new Error(`Could not approve request: ${updateError.message}`)
+
+  const { data: others } = await supabase
+    .from('bookings')
+    .select('*')
+    .eq('listing_id', approved.listing_id)
+    .eq('status', 'pending')
+
+  const overlapping = (others ?? []).filter((b: any) =>
+    b.id !== approved.id && rangesOverlap(approved.check_in, approved.check_out, b.check_in, b.check_out)
+  )
+  if (overlapping.length) {
+    const ids = overlapping.map((b: any) => b.id)
+    const declined = await supabase.from('bookings').update({ status: 'declined' }).in('id', ids)
+    if (declined.error) console.error('Could not decline overlapping requests:', declined.error.message)
+    const notified = await supabase.from('notifications').insert(overlapping.map((b: any) => ({
+      user_id: b.guest_id,
+      title: 'Booking request declined',
+      body: `Your request for ${booking.listing.title} was not accepted because those dates are no longer available.`,
+      link: '/trips',
+    })))
+    if (notified.error) console.error('Could not notify declined guests:', notified.error.message)
+  }
+
+  const payLink = `/booking/${approved.listing_id}/payment?booking_id=${approved.id}`
+  const notified = await supabase.from('notifications').insert([
+    {
+      user_id: approved.guest_id,
+      title: 'Booking request approved',
+      body: `Your request for ${booking.listing.title} was approved. Complete payment to confirm your booking.`,
+      link: payLink,
+    },
+    {
+      user_id: booking.listing.host_id,
+      title: 'Request approved — awaiting payment',
+      body: `${approved.guest_name} has been asked to pay for ${booking.listing.title}. The booking will confirm after payment.`,
+      link: '/hosting',
+    },
+  ])
+  if (notified.error) console.error('Could not create approval notifications:', notified.error.message)
+
+  return json({ booking: approved, conversationId: null })
+}
+
+async function declineBooking(body: Record<string, unknown>): Promise<Response> {
+  const { hostId, bookingId } = body as { hostId?: string; bookingId?: string }
+  if (!hostId || !bookingId) return fail(400, 'hostId and bookingId are required')
+
+  const { data: booking, error } = await supabase
+    .from('bookings')
+    .select('*, listing:listings!inner(*)')
+    .eq('id', bookingId)
+    .eq('status', 'pending')
+    .eq('listing.host_id', hostId)
+    .maybeSingle()
+  if (error) throw new Error(`Could not load request: ${error.message}`)
+  if (!booking) return fail(404, 'Pending booking request not found')
+
+  const { data: declined, error: updateError } = await supabase
+    .from('bookings')
+    .update({ status: 'declined' })
+    .eq('id', booking.id)
+    .eq('status', 'pending')
+    .select('*')
+    .single()
+  if (updateError) throw new Error(`Could not decline request: ${updateError.message}`)
+
+  const notified = await supabase.from('notifications').insert({
+    user_id: booking.guest_id,
+    title: 'Booking request declined',
+    body: `Your request for ${booking.listing.title} was declined by the host.`,
+    link: '/trips',
+  })
+  if (notified.error) console.error('Could not notify declined guest:', notified.error.message)
+
+  return json({ booking: declined })
+}
+
+async function setListingAutoApprove(body: Record<string, unknown>): Promise<Response> {
+  const { hostId, listingId, enabled } = body as { hostId?: string; listingId?: string; enabled?: boolean }
+  if (!hostId || !listingId || typeof enabled !== 'boolean') {
+    return fail(400, 'hostId, listingId, and enabled are required')
+  }
+
+  const { data: listing, error } = await supabase
+    .from('listings')
+    .update({ auto_approve_bookings: enabled })
+    .eq('id', listingId)
+    .eq('host_id', hostId)
+    .select('id, title')
+    .maybeSingle()
+  if (error) throw new Error(`Could not update booking mode: ${error.message}`)
+  if (!listing) return fail(404, 'Listing not found')
+
+  if (enabled) {
+    const { data: pending } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('listing_id', listingId)
+      .in('status', ['pending', 'approved_payment_pending'])
+    if (pending?.length) {
+      const ids = pending.map((b: any) => b.id)
+      const declined = await supabase.from('bookings').update({ status: 'declined' }).in('id', ids)
+      if (declined.error) console.error('Could not clear pending requests:', declined.error.message)
+      const notified = await supabase.from('notifications').insert(pending.map((b: any) => ({
+        user_id: b.guest_id,
+        title: 'Booking request declined',
+        body: `Your pending request for ${listing.title} was closed because the host switched this listing to instant booking.`,
+        link: '/trips',
+      })))
+      if (notified.error) console.error('Could not notify cleared requests:', notified.error.message)
+    }
+  }
+
+  return json({ ok: true })
 }
 
 // After Stripe redirects back, the app verifies the session was paid; the
@@ -555,10 +886,20 @@ Deno.serve(async (req: Request) => {
         return await connectStatus(body)
       case 'create-product':
         return await createProduct(body)
+      case 'booking-request':
+        return await bookingRequest(body)
       case 'checkout':
         return await checkout(body)
+      case 'approved-request-checkout':
+        return await approvedRequestCheckout(body)
       case 'checkout-session':
         return await checkoutSession(body)
+      case 'approve-booking':
+        return await approveBooking(body)
+      case 'decline-booking':
+        return await declineBooking(body)
+      case 'listing-auto-approve':
+        return await setListingAutoApprove(body)
       case 'webhook':
         return await webhook(body)
       case 'earnings':

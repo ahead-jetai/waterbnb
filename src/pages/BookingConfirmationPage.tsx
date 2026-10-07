@@ -15,6 +15,14 @@ const NEXT_STEPS = [
   'Contact support if you need to make any changes to your reservation'
 ] as const
 
+const REQUEST_NEXT_STEPS = [
+  'Your host has received your request',
+  'The host will review your dates and guest details',
+  'If approved, you will receive a notification to pay',
+  'Your booking is confirmed only after payment succeeds',
+  'If the host declines, you will receive an update for this request'
+] as const
+
 export default function BookingConfirmationPage() {
   const { listingId } = useParams<{ listingId: string }>()
   const [searchParams] = useSearchParams()
@@ -90,6 +98,7 @@ export default function BookingConfirmationPage() {
 
   const { guestDetails } = booking
   const nights = calculateNights(booking.checkIn, booking.checkOut)
+  const isPending = booking.status === 'pending'
 
   const priceLineItems = [
     { label: `$${listing.pricePerNight.toFixed(2)} × ${nights} ${pluralize(nights, 'night')}`, amount: booking.subtotal },
@@ -102,9 +111,11 @@ export default function BookingConfirmationPage() {
         {/* Success Message */}
         <div className="text-center mb-8 animate-fade-up">
           <CheckCircleIcon className="mb-4" />
-          <h1 className="font-display text-4xl font-medium text-muted mb-2">Booking confirmed!</h1>
+          <h1 className="font-display text-4xl font-medium text-muted mb-2">
+            {isPending ? 'Request sent!' : 'Booking confirmed!'}
+          </h1>
           <p className="text-slate-500">
-            Your payment was successful. We've sent a receipt to{' '}
+            {isPending ? 'This host will review your request. We sent request details to ' : "Your payment was successful. We've sent a receipt to "}
             <span className="font-medium text-slate-700">{guestDetails.email}</span>
           </p>
         </div>
@@ -158,8 +169,8 @@ export default function BookingConfirmationPage() {
           <PriceSummary
             lineItems={priceLineItems}
             total={booking.total}
-            totalLabel="Total paid"
-            footer={<p>Paid securely via Stripe Checkout</p>}
+            totalLabel={isPending ? 'Estimated total' : 'Total paid'}
+            footer={<p>{isPending ? 'No payment has been collected yet' : 'Paid securely via Stripe Checkout'}</p>}
           />
         </div>
 
@@ -167,7 +178,7 @@ export default function BookingConfirmationPage() {
         <div className="card p-6 mb-8 bg-brand/5 ring-brand/20">
           <h2 className="font-display text-xl font-medium text-muted mb-4">Next steps</h2>
           <ul className="space-y-3">
-            {NEXT_STEPS.map((step, index) => (
+            {(isPending ? REQUEST_NEXT_STEPS : NEXT_STEPS).map((step, index) => (
               <li key={index} className="flex items-start gap-3 text-sm text-slate-600">
                 <span className="inline-flex w-5 h-5 rounded-full bg-brand text-white text-xs font-semibold items-center justify-center flex-shrink-0 mt-0.5">
                   {index + 1}

@@ -58,6 +58,24 @@ export async function startCheckout(input: {
   return url
 }
 
+/** Create an unpaid host-review booking request. */
+export async function createBookingRequest(input: {
+  listingId: string
+  guestId: string
+  checkIn: string
+  checkOut: string
+  guests: number
+  guestDetails: GuestDetails
+}): Promise<{ booking: Record<string, unknown> }> {
+  return invoke<{ booking: Record<string, unknown> }>('booking-request', input)
+}
+
+/** Start Stripe Checkout for a host-approved request. */
+export async function startApprovedRequestCheckout(bookingId: string, guestId: string): Promise<string> {
+  const { url } = await invoke<{ url: string }>('approved-request-checkout', { bookingId, guestId })
+  return url
+}
+
 export type CheckoutSessionResult = {
   paid: boolean
   amountTotal: number
@@ -72,6 +90,21 @@ export type CheckoutSessionResult = {
 /** Verify a Checkout session after Stripe redirects back to the app. */
 export async function fetchCheckoutSession(sessionId: string): Promise<CheckoutSessionResult> {
   return invoke<CheckoutSessionResult>('checkout-session', { sessionId })
+}
+
+/** Host accepts a pending booking request. Server creates chat/notifications and declines overlapping pending requests. */
+export async function approveBookingRequest(hostId: string, bookingId: string): Promise<{ booking: Record<string, unknown>; conversationId: string | null }> {
+  return invoke<{ booking: Record<string, unknown>; conversationId: string | null }>('approve-booking', { hostId, bookingId })
+}
+
+/** Host declines a pending booking request. */
+export async function declineBookingRequest(hostId: string, bookingId: string): Promise<{ booking: Record<string, unknown> }> {
+  return invoke<{ booking: Record<string, unknown> }>('decline-booking', { hostId, bookingId })
+}
+
+/** Toggle instant booking server-side; enabling it clears existing pending review requests for that listing. */
+export async function setListingAutoApprove(hostId: string, listingId: string, enabled: boolean): Promise<void> {
+  await invoke<{ ok: boolean }>('listing-auto-approve', { hostId, listingId, enabled })
 }
 
 export type StripeTransfer = {

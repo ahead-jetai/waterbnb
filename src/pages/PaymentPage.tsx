@@ -1,17 +1,21 @@
-import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { useUser } from '@clerk/clerk-react'
 import type { BookingData, Listing } from '../bookingTypes'
 import { fetchListing } from '../utils/listingsApi'
-import { startCheckout } from '../utils/paymentsApi'
+import { createBookingRequest, startApprovedRequestCheckout, startCheckout } from '../utils/paymentsApi'
 import { calculateBookingTotals, calculateNights } from '../utils/booking'
 import { BookingProgress } from '../components/booking'
+import { bookingModeLabel, bookingModeSummary, isInstantBooking } from '../utils/bookingMode'
+import { fetchBookingById } from '../utils/bookingsApi'
 
 export default function PaymentPage() {
   const { listingId } = useParams<{ listingId: string }>()
   const location = useLocation()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const approvedBookingId = searchParams.get('booking_id')
+  const wasCancelled = Boolean(searchParams.get('cancelled'))
   const { user } = useUser()
   const [bookingData, setBookingData] = useState<BookingData | null>(null)
   const [listing, setListing] = useState<Listing | null>(null)
@@ -23,11 +27,14 @@ export default function PaymentPage() {
   useEffect(() => {
     if (!listingId) return
     let cancelled = false
-    fetchListing(listingId).then(l => { if (!cancelled) setListing(l) })
+    fetchListing(listingId)
+      .then(l => { if (!cancelled) setListing(l) })
+      .catch(() => { if (!cancelled) setError('Could not load this listing. Please try again.') })
     return () => { cancelled = true }
   }, [listingId])
 
   useEffect(() => {
+    if (approvedBookingId) return
     if (location.state && location.state.bookingData) {
       const data = location.state.bookingData
       if (!data.guestDetails) {
@@ -35,13 +42,55 @@ export default function PaymentPage() {
         return
       }
       setBookingData(data)
-    } else {
+    } else if (!wasCancelled) {
+      // Returning from a cancelled Stripe Checkout has no router state; stay
+      // here so the "you have not been charged" message can render.
       navigate(`/listing/${listingId}`)
     }
-  }, [location.state, listingId, navigate])
+  }, [approvedBookingId, location.state, listingId, navigate, wasCancelled])
+
+  useEffect(() => {
+    if (!approvedBookingId) return
+    let cancelled = false
+    fetchBookingById(approvedBookingId).then(booking => {
+      if (cancelled) return
+      if (!booking || booking.status !== 'approved_payment_pending') {
+        setError('This request is not ready for payment.')
+        return
+      }
+      setBookingData({
+        listingId: booking.listingId,
+        dates: { checkIn: booking.checkIn, checkOut: booking.checkOut },
+        guests: booking.guests,
+        guestDetails: booking.guestDetails,
+      })
+      if (!listing && booking.listing) setListing(booking.listing)
+    }).catch(() => {
+      if (!cancelled) setError('Could not load this booking request. Please try again.')
+    })
+    return () => { cancelled = true }
+  }, [approvedBookingId, listing])
 
   if (!bookingData || !listing) {
-    return null
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="container-p py-16 max-w-lg text-center">
+          {error ? (
+            <>
+              <p className="text-sm text-danger mb-6" role="alert">{error}</p>
+              <div className="flex justify-center gap-3">
+                <Link to="/trips" className="btn btn-secondary no-underline">Back to trips</Link>
+                {listingId && (
+                  <Link to={`/listing/${listingId}`} className="btn btn-primary no-underline">Back to listing</Link>
+                )}
+              </div>
+            </>
+          ) : (
+            <p className="text-slate-500">Loading…</p>
+          )}
+        </div>
+      </div>
+    )
   }
 
   const checkInDate = new Date(bookingData.dates.checkIn)
@@ -57,10 +106,29 @@ export default function PaymentPage() {
     setError('')
     setSubmitting(true)
     try {
-      // The edge function computes the real amounts server-side and returns a
-      // Stripe-hosted Checkout URL; Stripe redirects back to our confirmation
-      // page (with session_id) after payment.
-      const url = await startCheckout({
+      if (approvedBookingId) {
+        const url = await startApprovedRequestCheckout(approvedBookingId, user.id)
+        window.location.href = url
+        return
+      }
+
+      if (isInstantBooking(listing)) {
+        // The edge function computes the real amounts server-side and returns a
+        // Stripe-hosted Checkout URL; Stripe redirects back to our confirmation
+        // page (with session_id) after payment.
+        const url = await startCheckout({
+          listingId,
+          guestId: user.id,
+          checkIn: bookingData.dates.checkIn,
+          checkOut: bookingData.dates.checkOut,
+          guests: bookingData.guests,
+          guestDetails: bookingData.guestDetails,
+        })
+        window.location.href = url
+        return
+      }
+
+      await createBookingRequest({
         listingId,
         guestId: user.id,
         checkIn: bookingData.dates.checkIn,
@@ -68,9 +136,9 @@ export default function PaymentPage() {
         guests: bookingData.guests,
         guestDetails: bookingData.guestDetails,
       })
-      window.location.href = url
+      navigate('/trips')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not start checkout. Please try again.')
+      setError(err instanceof Error ? err.message : 'Could not complete this request. Please try again.')
       setSubmitting(false)
     }
   }
@@ -94,30 +162,43 @@ export default function PaymentPage() {
 
         <div className="mb-8">
           <BookingProgress currentStep={3} />
-          <h1 className="font-display text-3xl font-medium text-muted text-center">Payment</h1>
+          <h1 className="font-display text-3xl font-medium text-muted text-center">
+            {approvedBookingId || isInstantBooking(listing) ? 'Payment' : 'Submit request'}
+          </h1>
         </div>
 
         <div className="grid md:grid-cols-2 gap-8">
           {/* Left Column - Pay with Stripe */}
           <div>
             <div className="card p-6">
-              <h3 className="font-semibold text-base mb-2">Secure checkout</h3>
+              <h3 className="font-semibold text-base mb-2">
+                {approvedBookingId || isInstantBooking(listing) ? 'Secure checkout' : 'Request to book'}
+              </h3>
               <p className="text-sm text-slate-500 mb-6">
-                You'll be redirected to Stripe's secure payment page to complete your
-                booking. Your payment goes to the host, and WaterBnB keeps a 12% service fee.
+                {approvedBookingId || isInstantBooking(listing)
+                  ? "You'll be redirected to Stripe's secure payment page to complete your booking. Your payment goes to the host, and WaterBnB keeps a 12% service fee."
+                  : 'Send your dates and guest details to the host. You will not be charged unless the host approves your request.'}
               </p>
+
+              <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm mb-6">
+                <p className="font-medium text-slate-800">{bookingModeLabel(listing)}</p>
+                <p className="text-slate-500 mt-0.5">{bookingModeSummary(listing)}</p>
+              </div>
 
               {error && (
                 <p className="text-sm text-danger mb-4" role="alert">{error}</p>
               )}
 
               <button onClick={handlePay} disabled={submitting} className="btn btn-primary w-full">
-                {submitting ? 'Redirecting to Stripe…' : `Pay with Stripe — $${total.toFixed(2)}`}
+                {submitting
+                  ? approvedBookingId || isInstantBooking(listing) ? 'Redirecting to Stripe…' : 'Submitting request…'
+                  : approvedBookingId || isInstantBooking(listing) ? `Pay with Stripe — $${total.toFixed(2)}` : 'Submit booking request'}
               </button>
 
               <p className="text-xs text-slate-400 text-center mt-4">
-                Payments are processed by Stripe. You won't be charged until you
-                confirm on the next page.
+                {approvedBookingId || isInstantBooking(listing)
+                  ? "Payments are processed by Stripe. You won't be charged until you confirm on the next page."
+                  : 'No payment method is collected for host-review requests.'}
               </p>
             </div>
           </div>
@@ -135,6 +216,9 @@ export default function PaymentPage() {
                 />
                 <h4 className="font-semibold text-sm">{listing.title}</h4>
                 <p className="text-xs text-slate-500 mt-0.5">{listing.location}</p>
+                <p className="text-xs text-slate-500 mt-2">
+                  <span className="font-medium text-slate-700">{bookingModeLabel(listing)}:</span> {bookingModeSummary(listing)}
+                </p>
               </div>
 
               <div className="border-t border-slate-100 pt-4 space-y-2 mb-4 text-sm">

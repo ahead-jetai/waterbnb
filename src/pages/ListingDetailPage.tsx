@@ -6,6 +6,7 @@ import { fetchUnavailableRanges, rangesOverlap, type UnavailableRange } from '..
 import { fetchHostProfile, type HostProfile } from '../utils/hostProfilesApi';
 import StarRating from '../components/StarRating';
 import type { BookingData, Listing } from '../bookingTypes';
+import { bookingModeLabel, bookingModeSummary } from '../utils/bookingMode';
 
 /** Clickable host byline that lands on the host's public profile page. */
 function HostCard({ hostId, profile }: { hostId: string; profile: HostProfile | null }) {
@@ -216,6 +217,9 @@ export default function ListingDetailPage() {
           <div className="mb-6">
             <h2 className="font-display text-xl font-medium text-muted mb-3">What this place offers</h2>
             <div className="flex flex-wrap gap-2">
+              <span className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-sm font-medium">
+                {bookingModeLabel(listing)}
+              </span>
               {listing.tags.map((tag) => (
                 <span
                   key={tag}
@@ -253,6 +257,10 @@ export default function ListingDetailPage() {
               <div>
                 <h3 className="font-semibold text-slate-900 mb-1">Check-out</h3>
                 <p className="text-slate-500 text-sm">Before 11:00 AM</p>
+              </div>
+              <div>
+                <h3 className="font-semibold text-slate-900 mb-1">Booking approval</h3>
+                <p className="text-slate-500 text-sm">{bookingModeSummary(listing)}</p>
               </div>
             </div>
           </div>
