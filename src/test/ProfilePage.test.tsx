@@ -62,6 +62,7 @@ describe('ProfilePage', () => {
     expect(screen.getByText(/my trips/i)).toBeInTheDocument()
     expect(screen.getByText(/switch to hosting/i)).toBeInTheDocument()
     expect(screen.getByText(/account & security/i)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /demo mode/i })).toHaveAttribute('href', '/demo?autoplay=1')
     expect(screen.getByText(/sign out/i)).toBeInTheDocument()
   })
 
