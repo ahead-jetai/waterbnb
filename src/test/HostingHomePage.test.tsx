@@ -7,6 +7,7 @@ const clerkState = {
 }
 
 vi.mock('@clerk/clerk-react', () => ({
+  useAuth: () => ({ getToken: async () => null }),
   useUser: () => ({
     user: { firstName: 'Jane', unsafeMetadata: clerkState.metadata, update: vi.fn() },
     isLoaded: true,

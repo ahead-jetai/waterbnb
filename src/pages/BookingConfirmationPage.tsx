@@ -1,5 +1,6 @@
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useEffect, useState } from 'react'
+import { useAuth } from '@clerk/clerk-react'
 import type { Booking, Listing } from '../bookingTypes'
 import { fetchListing } from '../utils/listingsApi'
 import { fetchCheckoutSession } from '../utils/paymentsApi'
@@ -34,6 +35,8 @@ export default function BookingConfirmationPage() {
   const [loading, setLoading] = useState(true)
   const [conversationId, setConversationId] = useState<string | null>(null)
 
+  const { getToken } = useAuth()
+
   useEffect(() => {
     if (!listingId) return
     let cancelled = false
@@ -55,7 +58,7 @@ export default function BookingConfirmationPage() {
 
     async function confirm(id: string) {
       try {
-        const session = await fetchCheckoutSession(id)
+        const session = await fetchCheckoutSession(getToken, id)
         if (!session.paid || !session.booking) {
           throw new Error('This payment has not been completed. You have not been charged.')
         }
@@ -73,7 +76,7 @@ export default function BookingConfirmationPage() {
 
     confirm(sessionId)
     return () => { cancelled = true }
-  }, [sessionId])
+  }, [getToken, sessionId])
 
   if (loading) {
     return (
