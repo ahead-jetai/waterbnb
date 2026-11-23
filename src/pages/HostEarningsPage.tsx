@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useUser } from '@clerk/clerk-react'
+import { useAuth, useUser } from '@clerk/clerk-react'
 import { fetchEarnings, type EarningsSummary } from '../utils/paymentsApi'
 import { fetchHostListings } from '../utils/listingsApi'
 import { fetchHostAnalytics, type HostAnalytics } from '../utils/hostAnalyticsApi'
@@ -57,6 +57,7 @@ function RecommendationBadge({ direction }: { direction: 'raise' | 'lower' | 'ke
 /** Host earnings & analytics: live Stripe money data + booking insights. */
 export default function HostEarningsPage() {
   const { user } = useUser()
+  const { getToken } = useAuth()
   const [earnings, setEarnings] = useState<EarningsSummary | null>(null)
   const [analytics, setAnalytics] = useState<HostAnalytics | null>(null)
   const [loading, setLoading] = useState(true)
@@ -70,7 +71,7 @@ export default function HostEarningsPage() {
         const listings = await fetchHostListings(user.id)
         // Stripe can be slow/unconfigured; booking analytics should still render.
         const [earningsResult, analyticsResult] = await Promise.allSettled([
-          fetchEarnings(user.id),
+          fetchEarnings(getToken),
           fetchHostAnalytics(user.id, listings),
         ])
         if (cancelled) return
@@ -85,7 +86,7 @@ export default function HostEarningsPage() {
     }
     load()
     return () => { cancelled = true }
-  }, [user?.id])
+  }, [getToken, user?.id])
 
   if (!user) return null
 

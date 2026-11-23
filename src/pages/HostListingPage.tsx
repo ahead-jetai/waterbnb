@@ -1,6 +1,6 @@
 import { useState, useId, useRef, useEffect } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { useUser } from '@clerk/clerk-react'
+import { useAuth, useUser } from '@clerk/clerk-react'
 import { uploadListingImage, deleteListingImage } from '../utils/supabase'
 import { createListing, updateListing, fetchListing } from '../utils/listingsApi'
 import { setListingAutoApprove } from '../utils/paymentsApi'
@@ -660,6 +660,7 @@ export default function HostListingPage() {
   const navigate = useNavigate()
   const { id: editId } = useParams<{ id: string }>()
   const { user } = useUser()
+  const { getToken } = useAuth()
   const isEdit = Boolean(editId)
   const [step, setStep] = useState(1)
   const [draft, setDraft] = useState<ListingDraft>(INITIAL_DRAFT)
@@ -698,7 +699,7 @@ export default function HostListingPage() {
     try {
       const input = { ...draft, hostId: user?.id }
       const listing = editId ? await updateListing(editId, input) : await createListing(input)
-      if (user?.id) await setListingAutoApprove(user.id, listing.id, draft.autoApproveBookings)
+      if (user?.id) await setListingAutoApprove(getToken, listing.id, draft.autoApproveBookings)
       setSaved(listing)
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useUser } from '@clerk/clerk-react'
+import { useAuth, useUser } from '@clerk/clerk-react'
 import {
   createConnectAccount,
   createOnboardingLink,
@@ -46,14 +46,15 @@ function AccountStatus({ status }: { status: ConnectStatus | null }) {
 /** Host payments setup: Stripe Connect onboarding and live account status. */
 export default function HostPaymentsPage() {
   const { user } = useUser()
+  const { getToken } = useAuth()
   const [status, setStatus] = useState<ConnectStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [working, setWorking] = useState(false)
   const [error, setError] = useState('')
 
-  const refresh = useCallback(async (userId: string) => {
+  const refresh = useCallback(async () => {
     try {
-      const s = await fetchConnectStatus(userId)
+      const s = await fetchConnectStatus(getToken)
       setStatus(s)
       setError('')
     } catch (err) {
@@ -61,11 +62,11 @@ export default function HostPaymentsPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [getToken])
 
   useEffect(() => {
     if (!user?.id) return
-    refresh(user.id)
+    refresh()
   }, [user?.id, refresh])
 
   if (!user) return null
@@ -76,8 +77,8 @@ export default function HostPaymentsPage() {
     try {
       const name = [user.firstName, user.lastName].filter(Boolean).join(' ')
       const email = user.primaryEmailAddress?.emailAddress ?? `${user.id}@waterbnb.example`
-      await createConnectAccount(user.id, name, email)
-      const url = await createOnboardingLink(user.id)
+      await createConnectAccount(getToken, name, email)
+      const url = await createOnboardingLink(getToken)
       window.location.href = url // hand off to Stripe-hosted onboarding
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not start onboarding.')
@@ -163,7 +164,7 @@ export default function HostPaymentsPage() {
                         : 'Onboard to collect payments'}
                 </button>
                 {status?.hasAccount && (
-                  <button onClick={() => { setLoading(true); refresh(user.id) }} className="btn btn-secondary">
+                  <button onClick={() => { setLoading(true); refresh() }} className="btn btn-secondary">
                     Refresh status
                   </button>
                 )}
