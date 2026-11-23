@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
-import { useUser } from '@clerk/clerk-react'
+import { useAuth, useUser } from '@clerk/clerk-react'
 import { useUserMode } from '../hooks/useUserMode'
 import { fetchHostListings } from '../utils/listingsApi'
 import { fetchHostAnalytics, type HostAnalytics } from '../utils/hostAnalyticsApi'
@@ -12,6 +12,7 @@ import type { Booking, Listing } from '../bookingTypes'
 /** Hosting-mode home: the host's dashboard. */
 export default function HostingHomePage() {
   const { user } = useUser()
+  const { getToken } = useAuth()
   const { mode, isLoaded } = useUserMode()
   const firstName = user?.firstName
   const [myListings, setMyListings] = useState<Listing[]>([])
@@ -54,7 +55,7 @@ export default function HostingHomePage() {
     setBusyRequestId(bookingId)
     setRequestError(null)
     try {
-      await approveBookingRequest(user.id, bookingId)
+      await approveBookingRequest(getToken, bookingId)
       await refreshBookings()
     } catch (err) {
       setRequestError(err instanceof Error ? err.message : 'Could not approve this request. Please try again.')
@@ -68,7 +69,7 @@ export default function HostingHomePage() {
     setBusyRequestId(bookingId)
     setRequestError(null)
     try {
-      await declineBookingRequest(user.id, bookingId)
+      await declineBookingRequest(getToken, bookingId)
       await refreshBookings()
     } catch (err) {
       setRequestError(err instanceof Error ? err.message : 'Could not decline this request. Please try again.')

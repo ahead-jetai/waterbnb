@@ -14,7 +14,10 @@ vi.mock('../utils/paymentsApi', () => ({
   createOnboardingLink: (...args: unknown[]) => mockCreateOnboardingLink(...args),
 }))
 
+const getToken = vi.hoisted(() => vi.fn(async () => 'clerk-session'))
+
 vi.mock('@clerk/clerk-react', () => ({
+  useAuth: () => ({ getToken }),
   useUser: () => ({
     user: {
       id: 'host_1',
@@ -118,8 +121,8 @@ describe('HostPaymentsPage', () => {
     await user.click(onboard)
 
     await waitFor(() => {
-      expect(mockCreateConnectAccount).toHaveBeenCalledWith('host_1', 'Jane Sailor', 'jane@example.com')
-      expect(mockCreateOnboardingLink).toHaveBeenCalledWith('host_1')
+      expect(mockCreateConnectAccount).toHaveBeenCalledWith(getToken, 'Jane Sailor', 'jane@example.com')
+      expect(mockCreateOnboardingLink).toHaveBeenCalledWith(getToken)
       expect(window.location.href).toBe('https://stripe.example/onboard')
     })
 
