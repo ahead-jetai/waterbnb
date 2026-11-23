@@ -27,13 +27,13 @@ die() { log "ERROR: $*"; exit 1; }
 log "mode=${AIR_STARTUP_MODE:-task} repo=$REPO_ROOT port=$DEV_PORT"
 
 # ---------------------------------------------------------------------------
-# 1. Toolchain: the image ships Node + npm. README requires Node >= 22.13.
+# 1. Toolchain: the image ships Node + npm.
 # ---------------------------------------------------------------------------
 command -v node >/dev/null 2>&1 || die "node is not installed; this project needs Node.js 22.13+ (24 LTS recommended)"
 command -v npm  >/dev/null 2>&1 || die "npm is not installed"
-NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
 log "node $(node -v), npm $(npm -v)"
-[ "$NODE_MAJOR" -ge 22 ] || die "Node.js $(node -v) is too old; this project requires Node.js 22.13+"
+node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit((major === 22 && minor >= 13) || (major >= 24 && major % 2 === 0) ? 0 : 1)' \
+  || die "Unsupported Node.js $(node -v); use 22.13+ on the 22 line or an even release starting with 24"
 
 # ---------------------------------------------------------------------------
 # 2. Dependencies: `npm ci` from the lockfile, skipped when node_modules already
@@ -62,7 +62,7 @@ if [ -n "$WARMUP" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 4. Dev server: Vite on 0.0.0.0:$DEV_PORT accepting any Host (see
+# 4. Dev server: Vite on 0.0.0.0:$DEV_PORT allowing the configured proxy host (see
 #    .air/cloud/vite.config.ts), started detached so the script can return.
 # ---------------------------------------------------------------------------
 port_in_use() {
@@ -85,11 +85,8 @@ fi
 # ---------------------------------------------------------------------------
 healthcheck() {
   local url="http://127.0.0.1:$DEV_PORT"
-  local host_header="localhost"
-  local exposed="${JBCENTRAL_EXPOSED_PORT_URL_5173:-}"
-  if [ -n "$exposed" ]; then
-    host_header="${exposed#*://}"; host_header="${host_header%%/*}"
-  fi
+  local host_header
+  host_header="$(node -p 'const url = process.env[`JBCENTRAL_EXPOSED_PORT_URL_${process.env.AIR_DEV_PORT}`]; url ? new URL(url).host : "localhost"')"
 
   log "healthcheck: waiting for dev server at $url (Host: $host_header)..."
   local i=0 code body
