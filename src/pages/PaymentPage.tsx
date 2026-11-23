@@ -1,6 +1,6 @@
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useState, useEffect } from 'react'
-import { useUser } from '@clerk/clerk-react'
+import { useAuth, useUser } from '@clerk/clerk-react'
 import type { BookingData, Listing } from '../bookingTypes'
 import { fetchListing } from '../utils/listingsApi'
 import { createBookingRequest, startApprovedRequestCheckout, startCheckout } from '../utils/paymentsApi'
@@ -17,6 +17,7 @@ export default function PaymentPage() {
   const approvedBookingId = searchParams.get('booking_id')
   const wasCancelled = Boolean(searchParams.get('cancelled'))
   const { user } = useUser()
+  const { getToken } = useAuth()
   const [bookingData, setBookingData] = useState<BookingData | null>(null)
   const [listing, setListing] = useState<Listing | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -107,7 +108,7 @@ export default function PaymentPage() {
     setSubmitting(true)
     try {
       if (approvedBookingId) {
-        const url = await startApprovedRequestCheckout(approvedBookingId, user.id)
+        const url = await startApprovedRequestCheckout(getToken, approvedBookingId)
         window.location.href = url
         return
       }
@@ -116,9 +117,8 @@ export default function PaymentPage() {
         // The edge function computes the real amounts server-side and returns a
         // Stripe-hosted Checkout URL; Stripe redirects back to our confirmation
         // page (with session_id) after payment.
-        const url = await startCheckout({
+        const url = await startCheckout(getToken, {
           listingId,
-          guestId: user.id,
           checkIn: bookingData.dates.checkIn,
           checkOut: bookingData.dates.checkOut,
           guests: bookingData.guests,
@@ -128,9 +128,8 @@ export default function PaymentPage() {
         return
       }
 
-      await createBookingRequest({
+      await createBookingRequest(getToken, {
         listingId,
-        guestId: user.id,
         checkIn: bookingData.dates.checkIn,
         checkOut: bookingData.dates.checkOut,
         guests: bookingData.guests,
