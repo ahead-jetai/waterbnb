@@ -60,11 +60,10 @@ export default function BookingConfirmationPage() {
       try {
         const session = await fetchCheckoutSession(getToken, id)
         if (!session.paid || !session.booking) {
-          throw new Error('This payment has not been completed. You have not been charged.')
+          throw new Error('Your payment is not confirmed. If you submitted payment, check My Trips for updates before trying again.')
         }
         if (!cancelled) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          setBooking(rowToBooking(session.booking as any))
+          setBooking(rowToBooking(session.booking))
           setConversationId(session.conversationId)
         }
       } catch (err) {
@@ -100,6 +99,14 @@ export default function BookingConfirmationPage() {
   }
 
   const { guestDetails } = booking
+  if (booking.status === 'cancelled') {
+    return (
+      <div className="container-p py-16 text-center max-w-xl mx-auto">
+        <h1 className="font-display text-3xl font-semibold mb-4">Booking cancelled</h1>
+        <Link to="/trips" className="btn btn-primary no-underline">Check My Trips</Link>
+      </div>
+    )
+  }
   const nights = calculateNights(booking.checkIn, booking.checkOut)
   const isPending = booking.status === 'pending'
 

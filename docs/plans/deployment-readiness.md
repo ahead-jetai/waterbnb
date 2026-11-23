@@ -9,13 +9,22 @@ Status: code and regression tests added; staging configuration and verification 
 - Verify Clerk sessions before handling browser payment requests. Derive the actor from the verified token and scope Checkout results, booking decisions, listing changes, and Connect data to that actor.
 - Verify the Stripe signature against the raw webhook body before processing. Handle paid Checkout events, including delayed success, without relying on the guest returning.
 - Test missing and invalid credentials, cross-account access, and valid and rejected webhook delivery.
-- Deploy the frontend and `payments` function together on staging. Configure the exact `CLERK_ISSUER`, `CLIENT_URL` (SPA origin), and `STRIPE_WEBHOOK_SECRET` (signing secret for that environment's endpoint). Use a least-privilege restricted Stripe API key for `STRIPE_SECRET_KEY`. The gateway JWT check is disabled for this function because it accepts both Clerk and Stripe; the function verifies each credential itself. Subscribe the endpoint to `checkout.session.completed` and `checkout.session.async_payment_succeeded`.
+- Deploy the frontend and `payments` function together on staging. Configure the exact `CLERK_ISSUER`, `CLIENT_URL` (SPA origin), and `STRIPE_CHECKOUT_WEBHOOK_SECRET` (the signing secret for `/payments/webhook`, distinct from the separate Connect webhook's `STRIPE_WEBHOOK_SECRET`). Use a least-privilege restricted Stripe API key for `STRIPE_SECRET_KEY`. The gateway JWT check is disabled for this function because it accepts both Clerk and Stripe; the function verifies each credential itself.
 
 ## 2. Prevent double bookings and handle refunds
 
-- Reserve dates atomically in Postgres before charging, expire unpaid holds, and make Checkout creation and payment finalization safe to retry.
-- Define cancellation and refund rules, move cancellation behind authenticated server-side ownership checks, and reconcile Stripe refunds and host transfer reversals.
-- Test concurrent overlapping bookings, repeated checkout requests and webhooks, expired holds, cancellations, refunds, and failed payments and payouts.
+Status: implementation and regression tests added; staging cutover and Stripe sandbox verification pending.
+
+- Instant and host-approved payment use the same Postgres reservation. Dates are exclusive of checkout day. A Checkout URL is returned only after its session has been attached to the reservation. Open Checkout sessions expire 45 minutes after the initial hold; completed sessions awaiting delayed payment remain held until Stripe reports success or failure. The database and Stripe both guard retries.
+- Guests can cancel for a full refund, including fees, up to **48 hours before the listing's local check-in time**. Later requests and older bookings without a verified cutoff or recorded PaymentIntent go to support. Cancellation is final and dates are released only after Stripe reports a successful full refund with host transfer reversal and application-fee refund requested.
+- Test concurrent holds against PostgreSQL with `psql -X -f supabase/tests/checkout_holds_and_refunds.sql` **only on a fresh disposable instance**. The Vitest suite covers Checkout retries, delayed and failed payments, refund status, and transfer reversal failure. In the Stripe sandbox, also verify a failed payout and refund recovery after payout.
+
+### Staging cutover
+
+1. Disable old checkout creation and drain or expire existing Stripe Checkout sessions before enabling the new flow. Reconcile any already-paid sessions. Verify confirmed bookings do not overlap; the migration refuses to install the exclusion constraint if they do.
+2. Apply `20261123120000_checkout_holds_and_refunds.sql`, then set `listing_check_in_schedules` for each vetted listing using a real check-in time and its IANA time zone (for example, `15:00` and `America/New_York`). Listings without a verified schedule cannot accept new payments. Schedules are operator-managed, not browser-writable; changing a schedule does not change existing refund cutoffs.
+3. Configure `/functions/v1/payments/webhook` with its own signing secret and subscribe to `checkout.session.completed`, `checkout.session.expired`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `refund.created`, `refund.updated`, and `refund.failed`. The restricted Stripe key must be able to create and read Checkout sessions, read connected account capabilities, and create and read refunds with transfer reversal. Deploy the frontend and Edge Function together.
+4. When a refund or transfer reversal cannot be confirmed, keep the booking active. Support should reconcile the recorded PaymentIntent and existing Stripe refund before initiating any manual money movement; never issue a second refund just because the app did not receive a response.
 
 ## 3. Prove the production setup in staging
 

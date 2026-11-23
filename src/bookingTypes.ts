@@ -42,7 +42,8 @@ export type BookingData = {
   paymentDetails?: PaymentDetails
 }
 
-export type BookingStatus = 'pending' | 'approved_payment_pending' | 'confirmed' | 'declined' | 'cancelled' | 'expired'
+export type BookingStatus = 'pending' | 'approved_payment_pending' | 'checkout_pending' | 'confirmed' | 'declined' | 'cancelled' | 'expired'
+export type RefundStatus = 'requested' | 'pending' | 'succeeded' | 'failed'
 
 /** A persisted booking, as stored in Supabase. */
 export type Booking = {
@@ -59,5 +60,7 @@ export type Booking = {
   total: number
   bookingReference: string
   createdAt: string
+  refundCutoffAt?: string
+  refundStatus?: RefundStatus
   listing?: Listing
 }

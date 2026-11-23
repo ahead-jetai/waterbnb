@@ -1,13 +1,13 @@
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { useAuth, useUser } from '@clerk/clerk-react'
-import type { BookingData, Listing } from '../bookingTypes'
+import type { Booking, BookingData, Listing } from '../bookingTypes'
 import { fetchListing } from '../utils/listingsApi'
-import { createBookingRequest, startApprovedRequestCheckout, startCheckout } from '../utils/paymentsApi'
+import { createBookingRequest, fetchCheckoutBooking, startApprovedRequestCheckout, startCheckout } from '../utils/paymentsApi'
 import { calculateBookingTotals, calculateNights } from '../utils/booking'
 import { BookingProgress } from '../components/booking'
 import { bookingModeLabel, bookingModeSummary, isInstantBooking } from '../utils/bookingMode'
-import { fetchBookingById } from '../utils/bookingsApi'
+import { rowToBooking } from '../utils/bookingsApi'
 
 export default function PaymentPage() {
   const { listingId } = useParams<{ listingId: string }>()
@@ -18,12 +18,20 @@ export default function PaymentPage() {
   const wasCancelled = Boolean(searchParams.get('cancelled'))
   const { user } = useUser()
   const { getToken } = useAuth()
-  const [bookingData, setBookingData] = useState<BookingData | null>(null)
+  const [checkoutBooking, setCheckoutBooking] = useState<Booking | null>(null)
   const [listing, setListing] = useState<Listing | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(
-    searchParams.get('cancelled') ? 'Payment was cancelled — you have not been charged.' : ''
+    searchParams.get('cancelled') ? 'You left Checkout. Resume payment or check My Trips for your booking status.' : ''
   )
+  const savedBooking = checkoutBooking?.id === approvedBookingId ? checkoutBooking : null
+  const routedBooking = location.state?.bookingData as BookingData | undefined
+  const bookingData = approvedBookingId ? savedBooking && {
+    listingId: savedBooking.listingId,
+    dates: { checkIn: savedBooking.checkIn, checkOut: savedBooking.checkOut },
+    guests: savedBooking.guests,
+    guestDetails: savedBooking.guestDetails,
+  } : routedBooking?.guestDetails ? routedBooking : null
 
   useEffect(() => {
     if (!listingId) return
@@ -36,41 +44,29 @@ export default function PaymentPage() {
 
   useEffect(() => {
     if (approvedBookingId) return
-    if (location.state && location.state.bookingData) {
-      const data = location.state.bookingData
-      if (!data.guestDetails) {
-        navigate(`/booking/${listingId}/guest-details`, { state: { bookingData: data } })
-        return
-      }
-      setBookingData(data)
-    } else if (!wasCancelled) {
-      // Returning from a cancelled Stripe Checkout has no router state; stay
-      // here so the "you have not been charged" message can render.
+    if (routedBooking && !routedBooking.guestDetails) {
+      navigate(`/booking/${listingId}/guest-details`, { state: { bookingData: routedBooking } })
+    } else if (!routedBooking && !wasCancelled) {
       navigate(`/listing/${listingId}`)
     }
-  }, [approvedBookingId, location.state, listingId, navigate, wasCancelled])
+  }, [approvedBookingId, routedBooking, listingId, navigate, wasCancelled])
 
   useEffect(() => {
     if (!approvedBookingId) return
     let cancelled = false
-    fetchBookingById(approvedBookingId).then(booking => {
+    fetchCheckoutBooking(getToken, approvedBookingId).then(row => {
       if (cancelled) return
-      if (!booking || booking.status !== 'approved_payment_pending') {
+      const booking = rowToBooking(row)
+      if (booking.listingId !== listingId) {
         setError('This request is not ready for payment.')
         return
       }
-      setBookingData({
-        listingId: booking.listingId,
-        dates: { checkIn: booking.checkIn, checkOut: booking.checkOut },
-        guests: booking.guests,
-        guestDetails: booking.guestDetails,
-      })
-      if (!listing && booking.listing) setListing(booking.listing)
+      setCheckoutBooking(booking)
     }).catch(() => {
       if (!cancelled) setError('Could not load this booking request. Please try again.')
     })
     return () => { cancelled = true }
-  }, [approvedBookingId, listing])
+  }, [approvedBookingId, getToken, listingId])
 
   if (!bookingData || !listing) {
     return (
@@ -97,7 +93,9 @@ export default function PaymentPage() {
   const checkInDate = new Date(bookingData.dates.checkIn)
   const checkOutDate = new Date(bookingData.dates.checkOut)
   const nights = calculateNights(checkInDate, checkOutDate)
-  const { subtotal, serviceFee, total } = calculateBookingTotals(listing.pricePerNight, nights)
+  const { subtotal, serviceFee, total } = savedBooking?.status === 'checkout_pending'
+    ? savedBooking : calculateBookingTotals(listing.pricePerNight, nights)
+  const nightly = nights > 0 ? subtotal / nights : listing.pricePerNight
 
   const handlePay = async () => {
     if (!listingId || !user || !bookingData.guestDetails) {
@@ -109,7 +107,7 @@ export default function PaymentPage() {
     try {
       if (approvedBookingId) {
         const url = await startApprovedRequestCheckout(getToken, approvedBookingId)
-        window.location.href = url
+        window.location.assign(url)
         return
       }
 
@@ -124,7 +122,7 @@ export default function PaymentPage() {
           guests: bookingData.guests,
           guestDetails: bookingData.guestDetails,
         })
-        window.location.href = url
+        window.location.assign(url)
         return
       }
 
@@ -199,6 +197,11 @@ export default function PaymentPage() {
                   ? "Payments are processed by Stripe. You won't be charged until you confirm on the next page."
                   : 'No payment method is collected for host-review requests.'}
               </p>
+              {(approvedBookingId || isInstantBooking(listing)) && (
+                <p className="text-xs text-slate-600 text-center mt-2">
+                  Cancel at least 48 hours before check-in for a full refund, including fees. Contact support for later cancellations.
+                </p>
+              )}
             </div>
           </div>
 
@@ -241,7 +244,7 @@ export default function PaymentPage() {
 
               <div className="border-t border-slate-100 pt-4 space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-slate-500">${listing.pricePerNight.toFixed(2)} × {nights} nights</span>
+                  <span className="text-slate-500">${nightly.toFixed(2)} × {nights} nights</span>
                   <span>${subtotal.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between">

@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
-import type { GuestDetails } from '../bookingTypes'
+import type { BookingStatus, GuestDetails, RefundStatus } from '../bookingTypes'
+import type { BookingRow } from './bookingsApi'
 
 /**
  * Client for the `payments` Supabase Edge Function, which owns all Stripe
@@ -80,12 +81,17 @@ export async function startApprovedRequestCheckout(getToken: TokenGetter, bookin
   return url
 }
 
+export async function fetchCheckoutBooking(getToken: TokenGetter, bookingId: string) {
+  const { booking } = await invoke<{ booking: BookingRow }>('checkout-booking', getToken, { bookingId })
+  return booking
+}
+
 export type CheckoutSessionResult = {
   paid: boolean
   amountTotal: number
   reference: string
   /** Booking row persisted server-side by the edge function (null if unpaid). */
-  booking: Record<string, unknown> | null
+  booking: BookingRow | null
   /** Host↔guest chat opened server-side for this booking, if any. */
   conversationId: string | null
 }
@@ -103,6 +109,13 @@ export async function approveBookingRequest(getToken: TokenGetter, bookingId: st
 /** Host declines a pending booking request. */
 export async function declineBookingRequest(getToken: TokenGetter, bookingId: string): Promise<{ booking: Record<string, unknown> }> {
   return invoke<{ booking: Record<string, unknown> }>('decline-booking', getToken, { bookingId })
+}
+
+export async function cancelBooking(getToken: TokenGetter, bookingId: string): Promise<{
+  status: BookingStatus
+  refundStatus: RefundStatus
+}> {
+  return invoke('cancel-booking', getToken, { bookingId })
 }
 
 /** Toggle instant booking server-side; enabling it clears existing pending review requests for that listing. */

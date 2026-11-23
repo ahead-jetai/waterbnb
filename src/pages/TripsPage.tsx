@@ -1,27 +1,39 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useUser } from '@clerk/clerk-react'
-import { fetchGuestBookings, cancelBooking } from '../utils/bookingsApi'
+import { useAuth, useUser } from '@clerk/clerk-react'
+import { fetchGuestBookings } from '../utils/bookingsApi'
+import { cancelBooking } from '../utils/paymentsApi'
 import { formatDateLong, pluralize, calculateNights } from '../utils/booking'
 import type { Booking } from '../bookingTypes'
 
-function isUpcoming(booking: Booking): boolean {
-  return booking.status === 'confirmed' && new Date(booking.checkOut) >= new Date()
+function isUpcoming(booking: Booking, now: number): boolean {
+  return booking.status === 'confirmed' && Date.parse(booking.checkOut) >= now
 }
 
-function statusLabel(booking: Booking): string {
+function statusLabel(booking: Booking, now: number): string {
   if (booking.status === 'pending') return 'Pending host approval'
   if (booking.status === 'approved_payment_pending') return 'Approved — payment due'
+  if (booking.status === 'checkout_pending') return 'Checkout started'
   if (booking.status === 'declined') return 'Declined'
   if (booking.status === 'expired') return 'Expired'
   if (booking.status === 'cancelled') return 'Cancelled'
-  return isUpcoming(booking) ? 'Upcoming' : 'Completed'
+  return isUpcoming(booking, now) ? 'Upcoming' : 'Completed'
 }
 
-function TripCard({ booking, onCancel }: { booking: Booking; onCancel: (id: string) => void }) {
+function isPending(booking: Booking) {
+  return ['pending', 'approved_payment_pending', 'checkout_pending'].includes(booking.status)
+}
+
+function TripCard({ booking, now, onCancel, cancelling }: {
+  booking: Booking; now: number; onCancel: (id: string) => void; cancelling?: boolean
+}) {
   const { listing } = booking
   const nights = calculateNights(booking.checkIn, booking.checkOut)
-  const canCancel = isUpcoming(booking)
+  const cutoff = booking.refundCutoffAt ? new Date(booking.refundCutoffAt) : null
+  const refundInProgress = booking.refundStatus === 'pending' || booking.refundStatus === 'requested'
+  const upcoming = isUpcoming(booking, now)
+  const canCancel = upcoming && booking.refundStatus !== 'failed' &&
+    (refundInProgress || (cutoff && cutoff.getTime() >= now))
 
   return (
     <div className="card p-5 flex flex-col sm:flex-row gap-4">
@@ -50,12 +62,12 @@ function TripCard({ booking, onCancel }: { booking: Booking; onCancel: (id: stri
             className={`text-xs font-medium px-2.5 py-1 rounded-full flex-shrink-0 ${
               booking.status === 'cancelled' || booking.status === 'declined' || booking.status === 'expired'
                 ? 'bg-slate-100 text-slate-500'
-                : booking.status === 'pending' || booking.status === 'approved_payment_pending'
+                : isPending(booking)
                   ? 'bg-amber-100 text-amber-700'
                   : 'bg-brand/10 text-brand'
             }`}
           >
-            {statusLabel(booking)}
+            {statusLabel(booking, now)}
           </span>
         </div>
 
@@ -66,21 +78,32 @@ function TripCard({ booking, onCancel }: { booking: Booking; onCancel: (id: stri
           <div className="text-xs text-slate-400">Ref: {booking.bookingReference}</div>
         </div>
 
-        {booking.status === 'approved_payment_pending' && (
+        {(booking.status === 'approved_payment_pending' || booking.status === 'checkout_pending') && (
           <Link
             to={`/booking/${booking.listingId}/payment?booking_id=${booking.id}`}
             className="btn btn-primary no-underline mt-3 inline-flex text-sm py-1.5 px-3"
           >
-            Pay now to confirm
+            {booking.status === 'checkout_pending' ? 'Resume checkout' : 'Pay now to confirm'}
           </Link>
         )}
+
+        {upcoming && (
+          <p className="text-xs text-slate-600 mt-3">
+            {booking.refundStatus === 'failed' ? 'The refund failed. Your reservation remains active; contact support.'
+              : refundInProgress ? 'Refund requested. Your reservation remains active until the refund succeeds.'
+              : canCancel && cutoff ? `Full refund including fees until ${cutoff.toLocaleString()} (your local time).`
+              : 'Automatic cancellation is unavailable. Contact support to request a change.'}
+          </p>
+        )}
+        {booking.refundStatus === 'succeeded' && <p className="text-xs text-slate-600 mt-3">Full refund issued.</p>}
 
         {canCancel && (
           <button
             onClick={() => onCancel(booking.id)}
+            disabled={cancelling}
             className="mt-3 text-sm text-danger hover:underline bg-transparent border-0 cursor-pointer p-0"
           >
-            Cancel booking
+            {refundInProgress ? 'Check refund status' : 'Cancel booking for a full refund'}
           </button>
         )}
       </div>
@@ -90,8 +113,16 @@ function TripCard({ booking, onCancel }: { booking: Booking; onCancel: (id: stri
 
 export default function TripsPage() {
   const { user } = useUser()
+  const { getToken } = useAuth()
   const [bookings, setBookings] = useState<Booking[]>([])
   const [loading, setLoading] = useState(true)
+  const [cancelling, setCancelling] = useState<string | null>(null)
+  const [now, setNow] = useState(Date.now)
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), 60_000)
+    return () => window.clearInterval(interval)
+  }, [])
 
   useEffect(() => {
     if (!user) return
@@ -106,18 +137,23 @@ export default function TripsPage() {
   }, [user])
 
   const handleCancel = async (id: string) => {
-    if (!confirm('Cancel this booking?')) return
+    const booking = bookings.find(b => b.id === id)
+    if (!booking || cancelling) return
+    if (!booking.refundStatus && !confirm('Cancel this booking and request a full refund?')) return
+    setCancelling(id)
     try {
-      await cancelBooking(id)
-      setBookings(prev => prev.map(b => (b.id === id ? { ...b, status: 'cancelled' } : b)))
+      const result = await cancelBooking(getToken, id)
+      setBookings(prev => prev.map(b => (b.id === id ? { ...b, ...result } : b)))
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Could not cancel booking.')
+    } finally {
+      setCancelling(null)
     }
   }
 
-  const pending = bookings.filter(b => b.status === 'pending' || b.status === 'approved_payment_pending')
-  const upcoming = bookings.filter(isUpcoming)
-  const past = bookings.filter(b => b.status !== 'pending' && b.status !== 'approved_payment_pending' && !isUpcoming(b))
+  const pending = bookings.filter(isPending)
+  const upcoming = bookings.filter(b => isUpcoming(b, now))
+  const past = bookings.filter(b => !isPending(b) && !isUpcoming(b, now))
 
   if (loading) {
     return (
@@ -144,7 +180,7 @@ export default function TripsPage() {
               <p className="text-sm text-slate-400">No pending requests.</p>
             ) : (
               <div className="space-y-4">
-                {pending.map(b => <TripCard key={b.id} booking={b} onCancel={handleCancel} />)}
+                {pending.map(b => <TripCard key={b.id} booking={b} now={now} onCancel={handleCancel} />)}
               </div>
             )}
           </section>
@@ -155,7 +191,7 @@ export default function TripsPage() {
               <p className="text-sm text-slate-400">No upcoming trips.</p>
             ) : (
               <div className="space-y-4">
-                {upcoming.map(b => <TripCard key={b.id} booking={b} onCancel={handleCancel} />)}
+                {upcoming.map(b => <TripCard key={b.id} booking={b} now={now} onCancel={handleCancel} cancelling={cancelling !== null} />)}
               </div>
             )}
           </section>
@@ -166,7 +202,7 @@ export default function TripsPage() {
               <p className="text-sm text-slate-400">No past trips.</p>
             ) : (
               <div className="space-y-4">
-                {past.map(b => <TripCard key={b.id} booking={b} onCancel={handleCancel} />)}
+                {past.map(b => <TripCard key={b.id} booking={b} now={now} onCancel={handleCancel} />)}
               </div>
             )}
           </section>

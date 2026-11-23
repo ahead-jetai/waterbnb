@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 import { fetchBlockedRanges } from './availabilityApi'
-import type { Booking, BookingStatus, Listing } from '../bookingTypes'
+import type { Booking, BookingStatus, Listing, RefundStatus } from '../bookingTypes'
 
 type ListingRow = {
   id: string
@@ -19,7 +19,7 @@ type ListingRow = {
   auto_approve_bookings?: boolean | null
 }
 
-type BookingRow = {
+export type BookingRow = {
   id: string
   listing_id: string
   guest_id: string
@@ -36,6 +36,8 @@ type BookingRow = {
   total: number
   booking_reference: string
   created_at: string
+  refund_cutoff_at?: string | null
+  refund_status?: RefundStatus | null
   listing?: ListingRow | null
 }
 
@@ -79,6 +81,8 @@ export function rowToBooking(row: BookingRow): Booking {
     total: Number(row.total),
     bookingReference: row.booking_reference,
     createdAt: row.created_at,
+    refundCutoffAt: row.refund_cutoff_at ?? undefined,
+    refundStatus: row.refund_status ?? undefined,
     listing: row.listing ? listingRowToListing(row.listing) : undefined,
   }
 }
@@ -135,19 +139,6 @@ export async function fetchBookingByReference(reference: string): Promise<Bookin
     .maybeSingle()
   if (error) {
     console.error('Failed to look up booking by reference:', error.message)
-    return null
-  }
-  return data ? rowToBooking(data as BookingRow) : null
-}
-
-export async function fetchBookingById(id: string): Promise<Booking | null> {
-  const { data, error } = await supabase
-    .from('bookings')
-    .select('*, listing:listings(*)')
-    .eq('id', id)
-    .maybeSingle()
-  if (error) {
-    console.error('Failed to look up booking:', error.message)
     return null
   }
   return data ? rowToBooking(data as BookingRow) : null
@@ -210,9 +201,4 @@ export async function fetchUnavailableListingIds(checkIn: string, checkOut: stri
     return new Set()
   }
   return new Set((data as Pick<BookingRow, 'listing_id'>[]).map(r => r.listing_id))
-}
-
-export async function cancelBooking(id: string): Promise<void> {
-  const { error } = await supabase.from('bookings').update({ status: 'cancelled' }).eq('id', id)
-  if (error) throw new Error(`Could not cancel booking: ${error.message}`)
 }

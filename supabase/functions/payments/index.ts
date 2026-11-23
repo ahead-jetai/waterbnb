@@ -15,16 +15,18 @@
  *   /booking-request   { listingId, ... }             -> { booking }
  *   /checkout          { listingId, ... }             -> { url }
  *   /approved-request-checkout { bookingId }          -> { url }
+ *   /checkout-booking  { bookingId }                  -> { booking }
  *   /checkout-session  { sessionId }                  -> { paid, booking, conversationId, ... }
  *   /approve-booking   { bookingId }                  -> { booking, conversationId }
  *   /decline-booking   { bookingId }                  -> { booking }
+ *   /cancel-booking    { bookingId }                  -> { status, refundStatus }
  *   /listing-auto-approve { listingId, enabled }      -> { ok }
  *   /webhook           signed Stripe Checkout events
  *   /earnings          {}                             -> { hasAccount, balance, transfers, ... }
  *
  * Required secrets (Dashboard -> Edge Functions -> Secrets, or `supabase secrets set`):
  *   STRIPE_SECRET_KEY  — restricted Stripe API key. Never expose to the browser.
- *   STRIPE_WEBHOOK_SECRET — signing secret for this webhook endpoint.
+ *   STRIPE_CHECKOUT_WEBHOOK_SECRET — signing secret for this webhook endpoint.
  *   CLERK_ISSUER       — exact Clerk session issuer URL.
  *   CLIENT_URL         — where the SPA runs (e.g. http://localhost:5173).
  * SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are injected automatically.
@@ -56,8 +58,39 @@ const clientUrl = Deno.env.get('CLIENT_URL') ?? 'http://localhost:5173'
 const clientOrigin = new URL(clientUrl).origin
 const clerkIssuer = Deno.env.get('CLERK_ISSUER')
 const clerkKeys = clerkIssuer && createRemoteJWKSet(new URL('/.well-known/jwks.json', clerkIssuer))
-const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET')
+const webhookSecret = Deno.env.get('STRIPE_CHECKOUT_WEBHOOK_SECRET')
 const stripeCrypto = Stripe.createSubtleCryptoProvider()
+
+type CheckoutBooking = {
+  id: string
+  listing_id: string
+  guest_id: string
+  guest_email: string
+  status: string
+  checkout_session_id: string | null
+  checkout_expires_at: string
+  refund_cutoff_at: string
+  checkout_params: {
+    client_url: string
+    check_in_zone: string
+    title: string
+    nightly: number
+    nights: number
+    service_fee: number
+    application_fee: number
+    destination: string
+  }
+}
+
+type RefundBooking = {
+  id: string
+  total: number
+  status: string
+  refund_status: 'requested' | 'pending' | 'succeeded' | 'failed'
+  refund_requested_at: string
+  stripe_refund_id: string | null
+  stripe_payment_intent_id: string
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': clientOrigin,
@@ -221,41 +254,6 @@ async function connectStatus(hostId: string): Promise<Response> {
   })
 }
 
-// --- Step 3: products -------------------------------------------------------
-// Each listing becomes a *platform-level* Stripe Product (not created on the
-// connected account). The product's metadata carries the listing ->
-// connected-account mapping, and the product id is also stored on the listing.
-// deno-lint-ignore no-explicit-any
-async function ensureProductForListing(listing: any): Promise<string> {
-  if (listing.stripe_product_id) return listing.stripe_product_id
-
-  const accountId = listing.host_id ? await getHostAccountId(listing.host_id) : null
-
-  const product = await stripeClient.products.create({
-    name: listing.title,
-    description: `${listing.location} — book on WaterBnB`,
-    // default_price_data gives the product a nightly base price…
-    default_price_data: {
-      unit_amount: Math.round(Number(listing.price_per_night) * 100),
-      currency: 'usd',
-    },
-    // …and metadata records which listing/host/account this product maps to.
-    metadata: {
-      listing_id: listing.id,
-      host_id: listing.host_id ?? '',
-      connected_account_id: accountId ?? '',
-    },
-  })
-
-  const { error } = await supabase
-    .from('listings')
-    .update({ stripe_product_id: product.id })
-    .eq('id', listing.id)
-  if (error) console.error('Could not store product id on listing:', error.message)
-
-  return product.id
-}
-
 // --- Step 4a: host-review booking requests ---------------------------------
 // For manual-review listings, guests should not be charged until the host
 // accepts. This creates an unpaid pending request and notifies both sides.
@@ -340,7 +338,10 @@ async function checkout(body: Record<string, unknown>, guestId: string): Promise
     guests?: number
     guestDetails?: { name?: string; email?: string; phone?: string; specialRequests?: string }
   }
-  if (!listingId || !checkIn || !checkOut || !guests || !guestDetails?.email) {
+  if (typeof listingId !== 'string' || typeof checkIn !== 'string' || typeof checkOut !== 'string' ||
+      !validDates(checkIn, checkOut) ||
+      typeof guests !== 'number' || !Number.isInteger(guests) || guests <= 0 ||
+      typeof guestDetails?.email !== 'string' || !guestDetails.email) {
     return fail(400, 'listingId, checkIn, checkOut, guests, and guestDetails are required')
   }
 
@@ -351,147 +352,185 @@ async function checkout(body: Record<string, unknown>, guestId: string): Promise
     .maybeSingle()
   if (error || !listing) return fail(404, 'Listing not found')
   if (!listing.host_id) return fail(400, 'This listing has no host to pay')
-  if (!(listing.auto_approve_bookings ?? true)) {
-    return fail(409, 'This listing requires host approval before payment. Submit a booking request first.')
-  }
-
-  const accountId = await getHostAccountId(listing.host_id)
-  if (!accountId) {
-    return fail(409, 'This host has not set up payments yet. Please try another listing.')
-  }
-
-  // Server-side price computation — never trust amounts from the browser.
-  const { nights, nightlyCents, subtotalCents, serviceFeeCents, totalCents, stripeFeeCents, applicationFeeCents } = calculateAmounts(listing, checkIn, checkOut)
-
-  const productId = await ensureProductForListing(listing)
-
-  const session = await stripeClient.checkout.sessions.create({
-    mode: 'payment',
-    customer_email: guestDetails.email,
-    line_items: [
-      {
-        // Nightly rate × nights, tied to the listing's platform product.
-        price_data: {
-          currency: 'usd',
-          product: productId,
-          unit_amount: nightlyCents,
-        },
-        quantity: nights,
-      },
-      {
-        // The guest-facing service fee as its own line item.
-        price_data: {
-          currency: 'usd',
-          product_data: { name: 'WaterBnB service fee' },
-          unit_amount: serviceFeeCents,
-        },
-        quantity: 1,
-      },
-    ],
-    payment_intent_data: {
-      // Destination charge: platform keeps service fee + processing fee,
-      // host gets the rest (subtotal − Stripe fee).
-      application_fee_amount: applicationFeeCents,
-      transfer_data: {
-        destination: accountId,
-      },
-    },
-    // Everything needed to persist the booking after payment.
-    metadata: {
-      listing_id: listingId,
-      guest_id: guestId,
-      check_in: checkIn,
-      check_out: checkOut,
-      guests: String(guests),
-      guest_name: guestDetails.name ?? '',
-      guest_email: guestDetails.email,
-      guest_phone: guestDetails.phone ?? '',
-      special_requests: guestDetails.specialRequests ?? '',
-      subtotal_cents: String(subtotalCents),
-      service_fee_cents: String(serviceFeeCents),
-      stripe_fee_cents: String(stripeFeeCents),
-      host_net_cents: String(totalCents - applicationFeeCents),
-    },
-    success_url: `${clientUrl}/booking/${listingId}/confirmation?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${clientUrl}/booking/${listingId}/payment?cancelled=1`,
+  if (guests > listing.capacity) return fail(400, 'Too many guests for this listing')
+  return reserveAndCheckout(listing, guestId, null, checkIn, checkOut, {
+    check_in: checkIn, check_out: checkOut, guests, name: guestDetails.name ?? '',
+    email: guestDetails.email, phone: guestDetails.phone ?? '', special_requests: guestDetails.specialRequests || null,
   })
-
-  return json({ url: session.url })
 }
 
-async function approvedRequestCheckout(body: Record<string, unknown>, guestId: string): Promise<Response> {
-  const { bookingId } = body as { bookingId?: string }
-  if (!bookingId) return fail(400, 'bookingId is required')
+function validDates(checkIn: string, checkOut: string) {
+  const isDate = (value: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+    const date = new Date(value)
+    return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value
+  }
+  return isDate(checkIn) && isDate(checkOut) && checkIn < checkOut
+}
 
+async function bookingAwaitingCheckout(bookingId: string, guestId: string) {
   const { data: booking, error } = await supabase
     .from('bookings')
     .select('*, listing:listings!inner(*)')
     .eq('id', bookingId)
     .eq('guest_id', guestId)
-    .eq('status', 'approved_payment_pending')
+    .in('status', ['approved_payment_pending', 'checkout_pending'])
     .maybeSingle()
   if (error) throw new Error(`Could not load approved request: ${error.message}`)
+  return booking
+}
+
+async function checkoutBooking(body: Record<string, unknown>, guestId: string): Promise<Response> {
+  const { bookingId } = body
+  if (typeof bookingId !== 'string' || !bookingId) return fail(400, 'bookingId is required')
+  const booking = await bookingAwaitingCheckout(bookingId, guestId)
+  if (!booking) return fail(404, 'Booking awaiting payment not found.')
+  return json({ booking })
+}
+
+async function approvedRequestCheckout(body: Record<string, unknown>, guestId: string): Promise<Response> {
+  const { bookingId } = body
+  if (typeof bookingId !== 'string' || !bookingId) return fail(400, 'bookingId is required')
+  const booking = await bookingAwaitingCheckout(bookingId, guestId)
   if (!booking) return fail(404, 'Approved booking request not found')
 
   const listing = booking.listing
   if (!listing?.host_id) return fail(400, 'This listing has no host to pay')
-  const accountId = await getHostAccountId(listing.host_id)
-  if (!accountId) {
-    return fail(409, 'This host has not set up payments yet. Please try another listing.')
+  if (booking.status === 'checkout_pending' && booking.checkout_session_id) {
+    return resumeCheckout(booking as CheckoutBooking)
   }
+  return reserveAndCheckout(listing, guestId, booking.id, booking.check_in, booking.check_out)
+}
 
-  const { nights, nightlyCents, subtotalCents, serviceFeeCents, totalCents, stripeFeeCents, applicationFeeCents } =
-    calculateAmounts(listing, booking.check_in, booking.check_out)
-  const productId = await ensureProductForListing(listing)
+async function reserveAndCheckout(
+  listing: any, guestId: string, bookingId: string | null, checkIn: string, checkOut: string,
+  input: Record<string, unknown> | null = null,
+): Promise<Response> {
+  const accountId = await getHostAccountId(listing.host_id)
+  if (!accountId) return fail(409, 'This host has not set up payments yet.')
+  const account = await stripeClient.v2.core.accounts.retrieve(accountId, { include: ['configuration.recipient'] })
+  if (account.configuration?.recipient?.capabilities?.stripe_balance?.stripe_transfers?.status !== 'active') {
+    return fail(409, 'This host cannot receive payments yet.')
+  }
+  const amounts = calculateAmounts(listing, checkIn, checkOut)
+  const holdInput = {
+    p_guest: guestId, p_listing: listing.id, p_booking: bookingId, p_input: input,
+    p_checkout: {
+      destination: accountId, title: listing.title, client_url: clientUrl, nights: amounts.nights,
+      nightly: amounts.nightlyCents, subtotal: amounts.subtotalCents, service_fee: amounts.serviceFeeCents,
+      total: amounts.totalCents, application_fee: amounts.applicationFeeCents,
+    },
+  }
+  let result = await supabase.rpc('reserve_booking_checkout', holdInput).single()
+  if (result.error?.code === '23P01' && await releaseExpiredCheckouts(listing.id, checkIn, checkOut)) {
+    result = await supabase.rpc('reserve_booking_checkout', holdInput).single()
+  }
+  const { data: booking, error } = result
+  if (error) {
+    if (error.code === '23P01') return fail(409, 'These dates are no longer available.')
+    if (error.code === 'P0002') return fail(404, 'Booking awaiting payment not found.')
+    if (error.code === 'P0001' || error.code === '22023') return fail(409, error.message)
+    throw error
+  }
+  if (!booking) throw new Error('Checkout hold was not returned')
+  return resumeCheckout(booking as CheckoutBooking)
+}
 
-  const session = await stripeClient.checkout.sessions.create({
+async function releaseExpiredCheckouts(listingId: string, checkIn: string, checkOut: string): Promise<boolean> {
+  const { data, error } = await supabase.from('bookings').select('checkout_session_id')
+    .eq('listing_id', listingId).eq('status', 'checkout_pending')
+    .lt('check_in', checkOut).gt('check_out', checkIn)
+    .lte('checkout_expires_at', new Date().toISOString())
+    .not('checkout_session_id', 'is', null).order('checkout_expires_at').limit(10)
+  if (error) throw error
+  let released = false
+  for (const row of data ?? []) {
+    const session = await stripeClient.checkout.sessions.retrieve(row.checkout_session_id)
+    if (session.status === 'expired' && session.payment_status === 'unpaid') {
+      await expireCheckout(session)
+      released = true
+    }
+  }
+  return released
+}
+
+async function resumeCheckout(booking: CheckoutBooking): Promise<Response> {
+  if (booking.status !== 'checkout_pending') return fail(409, 'This checkout has expired. Start a new booking to try again.')
+  const params = booking.checkout_params
+  const path = `${params.client_url}/booking/${encodeURIComponent(booking.listing_id)}`
+  const confirmation = `${path}/confirmation?session_id=`
+  let session: Stripe.Checkout.Session
+  if (booking.checkout_session_id) {
+    session = await stripeClient.checkout.sessions.retrieve(booking.checkout_session_id)
+    if (session.status === 'complete') return json({ url: confirmation + encodeURIComponent(session.id) })
+    if (session.status === 'open' && session.url) return json({ url: session.url })
+    if (session.status === 'expired') await expireCheckout(session)
+    return fail(409, 'This checkout has expired. Start a new booking to try again.')
+  }
+  const expiresAt = Math.floor(new Date(booking.checkout_expires_at).getTime() / 1000)
+  if (expiresAt <= Math.floor(Date.now() / 1000) + 30 * 60) {
+    return fail(409, 'This checkout has expired. Start a new booking to try again.')
+  }
+  const cutoff = new Intl.DateTimeFormat('en-US', {
+    dateStyle: 'medium', timeStyle: 'long', timeZone: params.check_in_zone,
+  }).format(new Date(booking.refund_cutoff_at))
+  session = await stripeClient.checkout.sessions.create({
     mode: 'payment',
+    adaptive_pricing: { enabled: false },
     customer_email: booking.guest_email,
+    expires_at: expiresAt,
+    custom_text: {
+      submit: { message: `Full refund including fees until ${cutoff} (48 hours before check-in). After that, contact WaterBnB support.` },
+    },
     line_items: [
       {
         price_data: {
           currency: 'usd',
-          product: productId,
-          unit_amount: nightlyCents,
+          product_data: { name: params.title },
+          unit_amount: params.nightly,
         },
-        quantity: nights,
+        quantity: params.nights,
       },
       {
         price_data: {
           currency: 'usd',
           product_data: { name: 'WaterBnB service fee' },
-          unit_amount: serviceFeeCents,
+          unit_amount: params.service_fee,
         },
         quantity: 1,
       },
     ],
     payment_intent_data: {
-      application_fee_amount: applicationFeeCents,
+      application_fee_amount: params.application_fee,
       transfer_data: {
-        destination: accountId,
+        destination: params.destination,
       },
     },
     metadata: {
       booking_id: booking.id,
       listing_id: booking.listing_id,
       guest_id: booking.guest_id,
-      check_in: booking.check_in,
-      check_out: booking.check_out,
-      guests: String(booking.guests),
-      guest_name: booking.guest_name,
-      guest_email: booking.guest_email,
-      guest_phone: booking.guest_phone,
-      special_requests: booking.special_requests ?? '',
-      subtotal_cents: String(subtotalCents),
-      service_fee_cents: String(serviceFeeCents),
-      stripe_fee_cents: String(stripeFeeCents),
-      host_net_cents: String(totalCents - applicationFeeCents),
+      checkout_hold: '1',
     },
-    success_url: `${clientUrl}/booking/${booking.listing_id}/confirmation?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${clientUrl}/booking/${booking.listing_id}/payment?booking_id=${booking.id}&cancelled=1`,
-  })
+    success_url: `${confirmation}{CHECKOUT_SESSION_ID}`,
+    cancel_url: `${path}/payment?booking_id=${booking.id}&cancelled=1`,
+  }, { idempotencyKey: `waterbnb-checkout-${booking.id}` })
 
+  const { data: attached, error } = await supabase.from('bookings')
+    .update({ checkout_session_id: session.id })
+    .eq('id', booking.id).eq('status', 'checkout_pending')
+    .or(`checkout_session_id.is.null,checkout_session_id.eq.${session.id}`)
+    .select('id').maybeSingle()
+  if (error) throw error
+  if (!attached || !session.url) return fail(409, 'This checkout is no longer available.')
   return json({ url: session.url })
+}
+
+async function expireCheckout(session: Stripe.Checkout.Session) {
+  if (session.metadata?.checkout_hold !== '1' || !session.metadata.booking_id) return
+  const { error } = await supabase.from('bookings').update({ status: 'expired' })
+    .eq('id', session.metadata.booking_id).eq('checkout_session_id', session.id).eq('status', 'checkout_pending')
+  if (error) throw error
 }
 
 // --- Step 4b: finalize a paid session ----------------------------------------
@@ -504,6 +543,34 @@ async function approvedRequestCheckout(body: Record<string, unknown>, guestId: s
 // deno-lint-ignore no-explicit-any
 async function finalizePaidSession(session: any): Promise<{ booking: any; conversationId: string | null }> {
   const m = session.metadata ?? {}
+  if (m.checkout_hold === '1') {
+    const intentId = stripeObjectId(session.payment_intent)
+    if (!intentId) throw new Error('Paid Checkout is missing its PaymentIntent')
+    const { data, error } = await supabase.from('bookings').select('*')
+      .eq('id', m.booking_id).eq('checkout_session_id', session.id).eq('guest_id', m.guest_id).maybeSingle()
+    if (error) throw error
+    if (!data || data.listing_id !== m.listing_id || session.currency !== 'usd' ||
+        session.amount_total !== Number(data.checkout_params?.total)) {
+      throw new Error('Paid Checkout does not match its booking hold')
+    }
+    if (data.stripe_payment_intent_id && data.stripe_payment_intent_id !== intentId) {
+      throw new Error('Paid Checkout does not match the stored PaymentIntent')
+    }
+    const confirmed = await supabase.from('bookings')
+      .update({ status: 'confirmed', stripe_payment_intent_id: intentId })
+      .eq('id', data.id).eq('checkout_session_id', session.id).eq('status', 'checkout_pending')
+      .select('*').maybeSingle()
+    if (confirmed.error) throw confirmed.error
+    if (confirmed.data) return openBookingConversation(confirmed.data)
+    const current = await supabase.from('bookings').select('*')
+      .eq('id', data.id).eq('stripe_payment_intent_id', intentId).maybeSingle()
+    if (current.error) throw current.error
+    if (current.data?.status === 'confirmed') return openBookingConversation(current.data)
+    if (current.data?.status === 'cancelled') return { booking: current.data, conversationId: null }
+    throw new Error('Paid Checkout no longer has a reservation; reconcile in Stripe')
+  }
+
+  // Already-issued Checkout URLs from before holds were introduced.
   const reference = 'WB' + String(session.id).slice(-8).toUpperCase()
 
   // 1. Booking — insert once per payment reference.
@@ -561,7 +628,10 @@ async function finalizePaidSession(session: any): Promise<{ booking: any; conver
   }
   if (!booking) throw new Error('Booking could not be persisted')
 
-  // 2. Conversation — one per booking, seeded only by whoever creates it.
+  return openBookingConversation(booking)
+}
+
+async function openBookingConversation(booking: any) {
   const { data: listing } = await supabase.from('listings').select('*').eq('id', booking.listing_id).maybeSingle()
   if (!listing?.host_id) return { booking, conversationId: null }
 
@@ -674,15 +744,16 @@ async function approveBooking(body: Record<string, unknown>, hostId: string): Pr
   )
   if (overlapping.length) {
     const ids = overlapping.map((b: any) => b.id)
-    const declined = await supabase.from('bookings').update({ status: 'declined' }).in('id', ids)
+    const declined = await supabase.from('bookings').update({ status: 'declined' })
+      .in('id', ids).eq('status', 'pending').select('guest_id')
     if (declined.error) console.error('Could not decline overlapping requests:', declined.error.message)
-    const notified = await supabase.from('notifications').insert(overlapping.map((b: any) => ({
+    const notified = declined.data?.length && await supabase.from('notifications').insert(declined.data.map(b => ({
       user_id: b.guest_id,
       title: 'Booking request declined',
       body: `Your request for ${booking.listing.title} was not accepted because those dates are no longer available.`,
       link: '/trips',
     })))
-    if (notified.error) console.error('Could not notify declined guests:', notified.error.message)
+    if (notified && notified.error) console.error('Could not notify declined guests:', notified.error.message)
   }
 
   const payLink = `/booking/${approved.listing_id}/payment?booking_id=${approved.id}`
@@ -763,15 +834,16 @@ async function setListingAutoApprove(body: Record<string, unknown>, hostId: stri
       .in('status', ['pending', 'approved_payment_pending'])
     if (pending?.length) {
       const ids = pending.map((b: any) => b.id)
-      const declined = await supabase.from('bookings').update({ status: 'declined' }).in('id', ids)
+      const declined = await supabase.from('bookings').update({ status: 'declined' })
+        .in('id', ids).in('status', ['pending', 'approved_payment_pending']).select('guest_id')
       if (declined.error) console.error('Could not clear pending requests:', declined.error.message)
-      const notified = await supabase.from('notifications').insert(pending.map((b: any) => ({
+      const notified = declined.data?.length && await supabase.from('notifications').insert(declined.data.map(b => ({
         user_id: b.guest_id,
         title: 'Booking request declined',
         body: `Your pending request for ${listing.title} was closed because the host switched this listing to instant booking.`,
         link: '/trips',
       })))
-      if (notified.error) console.error('Could not notify cleared requests:', notified.error.message)
+      if (notified && notified.error) console.error('Could not notify cleared requests:', notified.error.message)
     }
   }
 
@@ -793,7 +865,7 @@ async function checkoutSession(body: Record<string, unknown>, guestId: string): 
   return json({
     paid,
     amountTotal: session.amount_total,
-    reference: 'WB' + String(sessionId).slice(-8).toUpperCase(),
+    reference: finalized?.booking?.booking_reference ?? 'WB' + String(sessionId).slice(-8).toUpperCase(),
     booking: finalized?.booking ?? null,
     conversationId: finalized?.conversationId ?? null,
   })
@@ -811,13 +883,92 @@ async function webhook(req: Request): Promise<Response> {
   } catch {
     return fail(400, 'Invalid Stripe signature')
   }
-  if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
+  if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded' ||
+      event.type === 'checkout.session.expired' || event.type === 'checkout.session.async_payment_failed') {
     const session = await stripeClient.checkout.sessions.retrieve(event.data.object.id)
     if (session.mode === 'payment' && session.payment_status === 'paid' && session.metadata?.listing_id && session.metadata.guest_id) {
       await finalizePaidSession(session)
+    } else if (session.status === 'expired' || event.type === 'checkout.session.async_payment_failed') {
+      await expireCheckout(session)
+    }
+  } else if (event.type === 'refund.created' || event.type === 'refund.updated' || event.type === 'refund.failed') {
+    if (event.data.object.metadata?.waterbnb_booking_id) {
+      await reconcileRefund(await stripeClient.refunds.retrieve(event.data.object.id))
     }
   }
   return json({ received: true })
+}
+
+function stripeObjectId(value: string | { id: string } | null | undefined): string | undefined {
+  return typeof value === 'string' ? value : value?.id
+}
+
+async function reconcileRefund(refund: Stripe.Refund) {
+  const bookingId = refund.metadata?.waterbnb_booking_id
+  const intentId = stripeObjectId(refund.payment_intent)
+  if (!bookingId || !intentId || refund.currency !== 'usd') return
+  const status = refund.status === 'succeeded' ? 'succeeded'
+    : refund.status === 'failed' || refund.status === 'canceled' ? 'failed' : 'pending'
+  const { data, error } = await supabase.from('bookings').update({
+    stripe_refund_id: refund.id,
+    refund_status: status,
+    ...(status === 'succeeded' ? { status: 'cancelled' } : {}),
+  }).eq('id', bookingId).eq('stripe_payment_intent_id', intentId).eq('status', 'confirmed')
+    .eq('total', refund.amount / 100)
+    .in('refund_status', ['requested', 'pending'])
+    .or(`stripe_refund_id.is.null,stripe_refund_id.eq.${refund.id}`)
+    .select('status,refund_status').maybeSingle()
+  if (error) throw error
+  if (data) return data
+  // Another request or event may have advanced it while we were at Stripe.
+  const { data: existing, error: readError } = await supabase.from('bookings').select('status,refund_status')
+    .eq('id', bookingId).eq('stripe_refund_id', refund.id).eq('stripe_payment_intent_id', intentId).maybeSingle()
+  if (readError) throw readError
+  return existing
+}
+
+async function cancelBooking(body: Record<string, unknown>, guestId: string): Promise<Response> {
+  const { bookingId } = body
+  if (typeof bookingId !== 'string' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(bookingId)) {
+    return fail(400, 'A valid bookingId is required')
+  }
+  const { data, error } = await supabase.rpc('claim_booking_refund', {
+    p_booking: bookingId, p_guest: guestId,
+  }).single()
+  if (error?.code === 'P0002') return fail(404, 'Booking not found')
+  if (error?.code === 'P0001') return fail(409, error.message)
+  if (error) throw error
+  const booking = data as RefundBooking
+  if (booking.refund_status === 'succeeded' || booking.refund_status === 'failed') {
+    return json({ status: booking.status, refundStatus: booking.refund_status })
+  }
+  let refund: Stripe.Refund | undefined
+  try {
+    if (booking.stripe_refund_id) {
+      refund = await stripeClient.refunds.retrieve(booking.stripe_refund_id)
+    } else if (Date.now() - Date.parse(booking.refund_requested_at) < 20 * 60 * 60 * 1000) {
+      refund = await stripeClient.refunds.create({
+        payment_intent: booking.stripe_payment_intent_id,
+        amount: Math.round(Number(booking.total) * 100),
+        reverse_transfer: true,
+        refund_application_fee: true,
+        metadata: { waterbnb_booking_id: booking.id },
+      }, { idempotencyKey: `waterbnb-refund-${booking.id}` })
+    } else {
+      // Stripe may have forgotten the idempotency key. Look up the original,
+      // but never start another money movement when its outcome is uncertain.
+      for await (const candidate of stripeClient.refunds.list({ payment_intent: booking.stripe_payment_intent_id })) {
+        if (candidate.metadata?.waterbnb_booking_id === booking.id) { refund = candidate; break }
+      }
+    }
+  } catch (err) {
+    console.error('Stripe refund needs reconciliation for booking', booking.id,
+      err instanceof Stripe.errors.StripeError ? err.code : undefined)
+    return fail(502, 'We could not confirm your refund. Your reservation remains active. Try again or contact support.')
+  }
+  const result = refund && await reconcileRefund(refund)
+  if (!result) return fail(409, 'Your refund needs manual review. Contact support; your reservation remains active.')
+  return json({ status: result.status, refundStatus: result.refund_status })
 }
 
 // --- Step 5: earnings --------------------------------------------------------
@@ -892,12 +1043,16 @@ Deno.serve(async (req: Request) => {
         return await checkout(body, userId)
       case 'approved-request-checkout':
         return await approvedRequestCheckout(body, userId)
+      case 'checkout-booking':
+        return await checkoutBooking(body, userId)
       case 'checkout-session':
         return await checkoutSession(body, userId)
       case 'approve-booking':
         return await approveBooking(body, userId)
       case 'decline-booking':
         return await declineBooking(body, userId)
+      case 'cancel-booking':
+        return await cancelBooking(body, userId)
       case 'listing-auto-approve':
         return await setListingAutoApprove(body, userId)
       case 'earnings':
