@@ -9,34 +9,36 @@
  * full 12%.
  *
  * Routes (all POST, dispatched on the sub-path after /payments):
- *   /connect-account   { hostId, name, email }        -> { accountId }
- *   /onboarding-link   { hostId }                     -> { url }
- *   /connect-status    { hostId }                     -> { hasAccount, ... }
- *   /create-product    { listingId }                  -> { productId }
- *   /booking-request   { listingId, guestId, ... }    -> { booking }
- *   /checkout          { listingId, guestId, ... }    -> { url }
- *   /approved-request-checkout { bookingId, guestId } -> { url }
+ *   /connect-account   { name, email }                -> { accountId }
+ *   /onboarding-link   {}                             -> { url }
+ *   /connect-status    {}                             -> { hasAccount, ... }
+ *   /booking-request   { listingId, ... }             -> { booking }
+ *   /checkout          { listingId, ... }             -> { url }
+ *   /approved-request-checkout { bookingId }          -> { url }
  *   /checkout-session  { sessionId }                  -> { paid, booking, conversationId, ... }
- *   /approve-booking   { hostId, bookingId }          -> { booking, conversationId }
- *   /decline-booking   { hostId, bookingId }          -> { booking }
- *   /listing-auto-approve { hostId, listingId, enabled } -> { ok }
- *   /webhook           Stripe event (checkout.session.completed)
- *   /earnings          { hostId }                     -> { hasAccount, balance, transfers, ... }
+ *   /approve-booking   { bookingId }                  -> { booking, conversationId }
+ *   /decline-booking   { bookingId }                  -> { booking }
+ *   /listing-auto-approve { listingId, enabled }      -> { ok }
+ *   /webhook           signed Stripe Checkout events
+ *   /earnings          {}                             -> { hasAccount, balance, transfers, ... }
  *
  * Required secrets (Dashboard -> Edge Functions -> Secrets, or `supabase secrets set`):
- *   STRIPE_SECRET_KEY  — your sk_/rk_ key. Never expose to the browser.
+ *   STRIPE_SECRET_KEY  — restricted Stripe API key. Never expose to the browser.
+ *   STRIPE_WEBHOOK_SECRET — signing secret for this webhook endpoint.
+ *   CLERK_ISSUER       — exact Clerk session issuer URL.
  *   CLIENT_URL         — where the SPA runs (e.g. http://localhost:5173).
  * SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are injected automatically.
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import Stripe from 'npm:stripe@22'
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { createRemoteJWKSet, jwtVerify } from 'npm:jose@5'
 
 // --- Step 0: configuration, failing fast with helpful errors -------------
 
 const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY')
 if (!stripeSecretKey) {
-  throw new Error('Missing STRIPE_SECRET_KEY secret. Set it with: supabase secrets set STRIPE_SECRET_KEY=sk_...')
+  throw new Error('Missing STRIPE_SECRET_KEY')
 }
 
 // One Stripe client for ALL requests. The SDK pins the latest API version
@@ -51,10 +53,15 @@ const supabase = createClient(
 
 // Where the SPA runs; used for Checkout/onboarding redirect URLs.
 const clientUrl = Deno.env.get('CLIENT_URL') ?? 'http://localhost:5173'
+const clientOrigin = new URL(clientUrl).origin
+const clerkIssuer = Deno.env.get('CLERK_ISSUER')
+const clerkKeys = clerkIssuer && createRemoteJWKSet(new URL('/.well-known/jwks.json', clerkIssuer))
+const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET')
+const stripeCrypto = Stripe.createSubtleCryptoProvider()
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Origin': clientOrigin,
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-clerk-token',
 }
 
 function json(body: unknown, status = 200): Response {
@@ -66,6 +73,21 @@ function json(body: unknown, status = 200): Response {
 
 function fail(status: number, message: string): Response {
   return json({ error: message }, status)
+}
+
+async function verifiedUserId(req: Request): Promise<string | undefined> {
+  const token = req.headers.get('x-clerk-token')
+  if (!token || !clerkKeys) return
+  try {
+    const { payload } = await jwtVerify(token, clerkKeys, {
+      issuer: clerkIssuer,
+      algorithms: ['RS256'],
+      requiredClaims: ['sub', 'exp', 'sid'],
+    })
+    if (payload.azp === clientOrigin && typeof payload.sid === 'string' && payload.sid) return payload.sub
+  } catch {
+    return
+  }
 }
 
 function nightsBetween(checkIn: string, checkOut: string): number {
@@ -99,9 +121,9 @@ async function getHostAccountId(hostId: string): Promise<string | null> {
 // The platform (WaterBnB) owns pricing and fee collection, so the account is
 // created with the v2 API as a *recipient* with Express dashboard access —
 // never with the deprecated top-level `type` parameter.
-async function connectAccount(body: Record<string, unknown>): Promise<Response> {
-  const { hostId, name, email } = body as { hostId?: string; name?: string; email?: string }
-  if (!hostId || !email) return fail(400, 'hostId and email are required')
+async function connectAccount(body: Record<string, unknown>, hostId: string): Promise<Response> {
+  const { name, email } = body as { name?: string; email?: string }
+  if (!email) return fail(400, 'email is required')
 
   // Reuse the existing account if this host already has one.
   const existing = await getHostAccountId(hostId)
@@ -151,10 +173,7 @@ async function connectAccount(body: Record<string, unknown>): Promise<Response> 
 // Generates a Stripe-hosted Account Link where the host completes KYC. The
 // app shows an "Onboard to collect payments" button that opens this link,
 // plus live status (always read from the API, never cached).
-async function onboardingLink(body: Record<string, unknown>): Promise<Response> {
-  const { hostId } = body as { hostId?: string }
-  if (!hostId) return fail(400, 'hostId is required')
-
+async function onboardingLink(hostId: string): Promise<Response> {
   const accountId = await getHostAccountId(hostId)
   if (!accountId) return fail(404, 'No connected account for this host yet')
 
@@ -175,10 +194,7 @@ async function onboardingLink(body: Record<string, unknown>): Promise<Response> 
 }
 
 // Live onboarding/payout status straight from the Accounts v2 API.
-async function connectStatus(body: Record<string, unknown>): Promise<Response> {
-  const { hostId } = body as { hostId?: string }
-  if (!hostId) return fail(400, 'hostId is required')
-
+async function connectStatus(hostId: string): Promise<Response> {
   const accountId = await getHostAccountId(hostId)
   if (!accountId) return json({ hasAccount: false })
 
@@ -240,35 +256,19 @@ async function ensureProductForListing(listing: any): Promise<string> {
   return product.id
 }
 
-async function createProduct(body: Record<string, unknown>): Promise<Response> {
-  const { listingId } = body as { listingId?: string }
-  if (!listingId) return fail(400, 'listingId is required')
-
-  const { data: listing, error } = await supabase
-    .from('listings')
-    .select('*')
-    .eq('id', listingId)
-    .maybeSingle()
-  if (error || !listing) return fail(404, 'Listing not found')
-
-  const productId = await ensureProductForListing(listing)
-  return json({ productId })
-}
-
 // --- Step 4a: host-review booking requests ---------------------------------
 // For manual-review listings, guests should not be charged until the host
 // accepts. This creates an unpaid pending request and notifies both sides.
-async function bookingRequest(body: Record<string, unknown>): Promise<Response> {
-  const { listingId, guestId, checkIn, checkOut, guests, guestDetails } = body as {
+async function bookingRequest(body: Record<string, unknown>, guestId: string): Promise<Response> {
+  const { listingId, checkIn, checkOut, guests, guestDetails } = body as {
     listingId?: string
-    guestId?: string
     checkIn?: string
     checkOut?: string
     guests?: number
     guestDetails?: { name?: string; email?: string; phone?: string; specialRequests?: string }
   }
-  if (!listingId || !guestId || !checkIn || !checkOut || !guests || !guestDetails?.email) {
-    return fail(400, 'listingId, guestId, checkIn, checkOut, guests, and guestDetails are required')
+  if (!listingId || !checkIn || !checkOut || !guests || !guestDetails?.email) {
+    return fail(400, 'listingId, checkIn, checkOut, guests, and guestDetails are required')
   }
 
   const { data: listing, error } = await supabase
@@ -332,17 +332,16 @@ async function bookingRequest(body: Record<string, unknown>): Promise<Response> 
 // the full amount is charged by the platform, the host's share flows to
 // their connected account, and WaterBnB retains the service fee plus the
 // estimated processing fee via application_fee_amount.
-async function checkout(body: Record<string, unknown>): Promise<Response> {
-  const { listingId, guestId, checkIn, checkOut, guests, guestDetails } = body as {
+async function checkout(body: Record<string, unknown>, guestId: string): Promise<Response> {
+  const { listingId, checkIn, checkOut, guests, guestDetails } = body as {
     listingId?: string
-    guestId?: string
     checkIn?: string
     checkOut?: string
     guests?: number
     guestDetails?: { name?: string; email?: string; phone?: string; specialRequests?: string }
   }
-  if (!listingId || !guestId || !checkIn || !checkOut || !guests || !guestDetails?.email) {
-    return fail(400, 'listingId, guestId, checkIn, checkOut, guests, and guestDetails are required')
+  if (!listingId || !checkIn || !checkOut || !guests || !guestDetails?.email) {
+    return fail(400, 'listingId, checkIn, checkOut, guests, and guestDetails are required')
   }
 
   const { data: listing, error } = await supabase
@@ -420,9 +419,9 @@ async function checkout(body: Record<string, unknown>): Promise<Response> {
   return json({ url: session.url })
 }
 
-async function approvedRequestCheckout(body: Record<string, unknown>): Promise<Response> {
-  const { bookingId, guestId } = body as { bookingId?: string; guestId?: string }
-  if (!bookingId || !guestId) return fail(400, 'bookingId and guestId are required')
+async function approvedRequestCheckout(body: Record<string, unknown>, guestId: string): Promise<Response> {
+  const { bookingId } = body as { bookingId?: string }
+  if (!bookingId) return fail(400, 'bookingId is required')
 
   const { data: booking, error } = await supabase
     .from('bookings')
@@ -641,9 +640,9 @@ function rangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: strin
 
 // Host accepts a pending request. This asks the guest to pay, and clears
 // overlapping pending requests for the same listing so only one guest proceeds.
-async function approveBooking(body: Record<string, unknown>): Promise<Response> {
-  const { hostId, bookingId } = body as { hostId?: string; bookingId?: string }
-  if (!hostId || !bookingId) return fail(400, 'hostId and bookingId are required')
+async function approveBooking(body: Record<string, unknown>, hostId: string): Promise<Response> {
+  const { bookingId } = body as { bookingId?: string }
+  if (!bookingId) return fail(400, 'bookingId is required')
 
   const { data: booking, error } = await supabase
     .from('bookings')
@@ -706,9 +705,9 @@ async function approveBooking(body: Record<string, unknown>): Promise<Response> 
   return json({ booking: approved, conversationId: null })
 }
 
-async function declineBooking(body: Record<string, unknown>): Promise<Response> {
-  const { hostId, bookingId } = body as { hostId?: string; bookingId?: string }
-  if (!hostId || !bookingId) return fail(400, 'hostId and bookingId are required')
+async function declineBooking(body: Record<string, unknown>, hostId: string): Promise<Response> {
+  const { bookingId } = body as { bookingId?: string }
+  if (!bookingId) return fail(400, 'bookingId is required')
 
   const { data: booking, error } = await supabase
     .from('bookings')
@@ -740,10 +739,10 @@ async function declineBooking(body: Record<string, unknown>): Promise<Response> 
   return json({ booking: declined })
 }
 
-async function setListingAutoApprove(body: Record<string, unknown>): Promise<Response> {
-  const { hostId, listingId, enabled } = body as { hostId?: string; listingId?: string; enabled?: boolean }
-  if (!hostId || !listingId || typeof enabled !== 'boolean') {
-    return fail(400, 'hostId, listingId, and enabled are required')
+async function setListingAutoApprove(body: Record<string, unknown>, hostId: string): Promise<Response> {
+  const { listingId, enabled } = body as { listingId?: string; enabled?: boolean }
+  if (!listingId || typeof enabled !== 'boolean') {
+    return fail(400, 'listingId and enabled are required')
   }
 
   const { data: listing, error } = await supabase
@@ -781,34 +780,42 @@ async function setListingAutoApprove(body: Record<string, unknown>): Promise<Res
 
 // After Stripe redirects back, the app verifies the session was paid; the
 // booking/conversation are finalized here too in case the webhook lost the race.
-async function checkoutSession(body: Record<string, unknown>): Promise<Response> {
+async function checkoutSession(body: Record<string, unknown>, guestId: string): Promise<Response> {
   const { sessionId } = body as { sessionId?: string }
   if (!sessionId) return fail(400, 'sessionId is required')
 
   const session = await stripeClient.checkout.sessions.retrieve(sessionId)
+  if (session.mode !== 'payment' || !session.metadata?.listing_id || session.metadata.guest_id !== guestId) {
+    return fail(404, 'Checkout session not found')
+  }
   const paid = session.payment_status === 'paid'
   const finalized = paid ? await finalizePaidSession(session) : null
   return json({
     paid,
     amountTotal: session.amount_total,
-    metadata: session.metadata,
     reference: 'WB' + String(sessionId).slice(-8).toUpperCase(),
     booking: finalized?.booking ?? null,
     conversationId: finalized?.conversationId ?? null,
   })
 }
 
-// Stripe webhook: finalizes the booking even if the guest never returns to
-// the app. The payload is treated as an untrusted hint — we only take the
-// session id from it and re-fetch the session from Stripe's API, so a forged
-// event cannot inject data (it can only ask us to finalize a genuinely paid
-// session, which is idempotent and harmless).
-async function webhook(body: Record<string, unknown>): Promise<Response> {
-  // deno-lint-ignore no-explicit-any
-  const event = body as any
-  if (event?.type === 'checkout.session.completed' && event?.data?.object?.id) {
-    const session = await stripeClient.checkout.sessions.retrieve(String(event.data.object.id))
-    if (session.payment_status === 'paid') await finalizePaidSession(session)
+async function webhook(req: Request): Promise<Response> {
+  if (!webhookSecret) return fail(503, 'Webhook is not configured')
+  const signature = req.headers.get('stripe-signature')
+  if (!signature) return fail(400, 'Missing Stripe signature')
+  let event: Stripe.Event
+  try {
+    event = await stripeClient.webhooks.constructEventAsync(
+      await req.text(), signature, webhookSecret, undefined, stripeCrypto,
+    )
+  } catch {
+    return fail(400, 'Invalid Stripe signature')
+  }
+  if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
+    const session = await stripeClient.checkout.sessions.retrieve(event.data.object.id)
+    if (session.mode === 'payment' && session.payment_status === 'paid' && session.metadata?.listing_id && session.metadata.guest_id) {
+      await finalizePaidSession(session)
+    }
   }
   return json({ received: true })
 }
@@ -817,10 +824,7 @@ async function webhook(body: Record<string, unknown>): Promise<Response> {
 // Money data for the host dashboard, read live from Stripe. Transfers to the
 // connected account are the host's earnings (destination charges route the
 // host's share there); the balance shows what has not yet been paid out.
-async function earnings(body: Record<string, unknown>): Promise<Response> {
-  const { hostId } = body as { hostId?: string }
-  if (!hostId) return fail(400, 'hostId is required')
-
+async function earnings(hostId: string): Promise<Response> {
   const accountId = await getHostAccountId(hostId)
   if (!accountId) return json({ hasAccount: false })
 
@@ -869,46 +873,40 @@ Deno.serve(async (req: Request) => {
 
   // Sub-path after the function name, e.g. /payments/checkout -> "checkout".
   const route = new URL(req.url).pathname.split('/').filter(Boolean).pop()
-  let body: Record<string, unknown> = {}
   try {
-    body = await req.json()
-  } catch {
-    // empty body is fine for some routes; validation happens per-route
-  }
-
-  try {
+    if (route === 'webhook') return await webhook(req)
+    const userId = await verifiedUserId(req)
+    if (!userId) return fail(401, 'Sign in to continue')
+    const body = await req.json().catch(() => null)
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return fail(400, 'Expected a JSON object')
     switch (route) {
       case 'connect-account':
-        return await connectAccount(body)
+        return await connectAccount(body, userId)
       case 'onboarding-link':
-        return await onboardingLink(body)
+        return await onboardingLink(userId)
       case 'connect-status':
-        return await connectStatus(body)
-      case 'create-product':
-        return await createProduct(body)
+        return await connectStatus(userId)
       case 'booking-request':
-        return await bookingRequest(body)
+        return await bookingRequest(body, userId)
       case 'checkout':
-        return await checkout(body)
+        return await checkout(body, userId)
       case 'approved-request-checkout':
-        return await approvedRequestCheckout(body)
+        return await approvedRequestCheckout(body, userId)
       case 'checkout-session':
-        return await checkoutSession(body)
+        return await checkoutSession(body, userId)
       case 'approve-booking':
-        return await approveBooking(body)
+        return await approveBooking(body, userId)
       case 'decline-booking':
-        return await declineBooking(body)
+        return await declineBooking(body, userId)
       case 'listing-auto-approve':
-        return await setListingAutoApprove(body)
-      case 'webhook':
-        return await webhook(body)
+        return await setListingAutoApprove(body, userId)
       case 'earnings':
-        return await earnings(body)
+        return await earnings(userId)
       default:
         return fail(404, `Unknown route: ${route}`)
     }
   } catch (err) {
     console.error(`payments/${route} failed:`, err)
-    return fail(500, err instanceof Error ? err.message : 'Payment operation failed')
+    return fail(500, 'Payment operation failed')
   }
 })
