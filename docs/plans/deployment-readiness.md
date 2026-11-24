@@ -28,9 +28,11 @@ Status: implementation and regression tests added; staging cutover and Stripe sa
 
 ## 3. Prove the production setup in staging
 
-- Make the base database schema, role grants, row-level access policies, and storage setup reproducible on a fresh Supabase project. Verify direct browser access to booking and listing data cannot bypass server-side controls.
-- Configure separate staging and production Clerk, Supabase, and Stripe environments. Validate SPA deep links, redirect origins, monitoring, backups, and a restore procedure.
-- Run a browser-level sign-in to listing to booking to payment to payout to cancellation walkthrough with separate guest and host accounts in Stripe test mode. Make the build, lint, and test checks green in CI.
+Status: local implementation; **hosted staging verification is still required** before this gate passes. See the [staging runbook](staging-runbook.md).
+
+- Rebuild the marketplace tables and image bucket from migrations. Browser access uses Clerk-backed RLS and column grants. Guests and hosts may only read booking details for bookings they participate in; public availability contains only listing IDs and date ranges. Pricing recommendations use public listing prices, not other hosts' transactions.
+- Run the `Verify` GitHub Actions workflow on PRs and `main`: lint, tests, build, SPA deep-link smoke check, clean database migration, access control, booking concurrency, and a database backup/restore rehearsal.
+- Before bringing anything live, complete the separate staging Clerk, Supabase, Stripe, monitoring, and hosted backup setup, then record evidence from the two-account browser walkthrough.
 
 ## 4. Get the marketplace ready for guests
 

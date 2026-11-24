@@ -9,7 +9,7 @@ export default function GuestDetailsPage() {
   const location = useLocation()
   const navigate = useNavigate()
   const { user } = useUser()
-  const [bookingData, setBookingData] = useState<BookingData | null>(null)
+  const bookingData = location.state?.bookingData as BookingData | undefined
   const [guestDetails, setGuestDetails] = useState<GuestDetails>(() => ({
     name: user ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() : '',
     email: '',
@@ -18,12 +18,8 @@ export default function GuestDetailsPage() {
   }))
 
   useEffect(() => {
-    if (location.state && location.state.bookingData) {
-      setBookingData(location.state.bookingData)
-    } else {
-      navigate(`/listing/${listingId}`)
-    }
-  }, [location.state, listingId, navigate])
+    if (!bookingData) navigate(`/listing/${listingId}`)
+  }, [bookingData, listingId, navigate])
 
   if (!bookingData) {
     return null

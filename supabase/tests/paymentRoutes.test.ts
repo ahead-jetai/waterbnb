@@ -67,7 +67,7 @@ const signedIn = { 'x-clerk-token': 'clerk-session' }
 beforeAll(async () => {
   const config: Record<string, string> = {
     CLIENT_URL: origin, CLERK_ISSUER: issuer,
-    STRIPE_SECRET_KEY: 'test-api-key', STRIPE_CHECKOUT_WEBHOOK_SECRET: webhookSecret,
+    STRIPE_SECRET_KEY: 'sk_test_placeholder', STRIPE_CHECKOUT_WEBHOOK_SECRET: webhookSecret,
   }
   vi.stubGlobal('Deno', { env: { get: (key: string) => config[key] }, serve: mocks.serve })
   await import('../functions/payments/index.ts')
@@ -138,6 +138,13 @@ describe('payment route authorization', () => {
 describe('Stripe webhook', () => {
   const event = { type: 'checkout.session.async_payment_succeeded', data: { object: { id: 'cs_test' } } }
   const headers = { 'stripe-signature': 'signature' }
+
+  it('rejects a live event before accessing Stripe data in a non-production environment', async () => {
+    mocks.constructEvent.mockResolvedValue({ ...event, livemode: true })
+    expect((await post('webhook', event, headers)).status).toBe(400)
+    expect(mocks.retrieve).not.toHaveBeenCalled()
+    expect(mocks.from).not.toHaveBeenCalled()
+  })
 
   it('rejects deliveries without a valid Stripe signature before querying Stripe or the database', async () => {
     expect((await post('webhook', event)).status).toBe(400)

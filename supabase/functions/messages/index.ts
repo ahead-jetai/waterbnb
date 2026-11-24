@@ -17,24 +17,22 @@
  *   /notifications   {}                          -> { notifications: [...] }
  *   /mark-read       { id? }                     -> { ok } (no id = mark all)
  *
- * Optional secret: CLERK_ISSUER to override the pinned Clerk instance.
+ * Configure APP_ENV, CLIENT_URL and CLERK_ISSUER for each deployment.
  */
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { createRemoteJWKSet, jwtVerify } from 'npm:jose@5'
+import { createClerkVerifier } from '../_shared/clerk.ts'
+import { getEnvironment } from '../_shared/environment.ts'
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 )
 
-// Pinned to this app's Clerk instance (public info — it's inside the
-// publishable key). Pinning prevents tokens minted by OTHER Clerk instances
-// from passing verification via their own issuer's JWKS.
-const clerkIssuer = Deno.env.get('CLERK_ISSUER') ?? 'https://bold-ant-89.clerk.accounts.dev'
-const jwks = createRemoteJWKSet(new URL(`${clerkIssuer}/.well-known/jwks.json`))
+const { clientOrigin, clerkIssuer } = getEnvironment(name => Deno.env.get(name))
+const verifyUser = createClerkVerifier(clerkIssuer, clientOrigin)
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': clientOrigin,
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-clerk-token',
 }
 
@@ -51,20 +49,13 @@ function fail(status: number, message: string): Response {
 
 /** Verify the Clerk session token and return the caller's user id. */
 async function requireUserId(req: Request): Promise<string> {
-  const token = req.headers.get('x-clerk-token')
-  if (!token) throw new Response(null, { status: 401 })
-  try {
-    const { payload } = await jwtVerify(token, jwks, { issuer: clerkIssuer })
-    if (!payload.sub) throw new Error('no sub')
-    return String(payload.sub)
-  } catch {
-    throw new Response(null, { status: 401 })
-  }
+  const userId = await verifyUser(req)
+  if (!userId) throw new Response(null, { status: 401 })
+  return userId
 }
 
 /** The conversation, only if the caller is one of its two participants. */
-// deno-lint-ignore no-explicit-any
-async function requireMembership(conversationId: string, userId: string): Promise<any> {
+async function requireMembership(conversationId: string, userId: string) {
   const { data, error } = await supabase
     .from('conversations')
     .select('*')
@@ -242,6 +233,6 @@ Deno.serve(async (req: Request) => {
       })
     }
     console.error(`messages/${route} failed:`, err)
-    return fail(500, err instanceof Error ? err.message : 'Request failed')
+    return fail(500, 'Request failed')
   }
 })

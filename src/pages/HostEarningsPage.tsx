@@ -72,7 +72,7 @@ export default function HostEarningsPage() {
         // Stripe can be slow/unconfigured; booking analytics should still render.
         const [earningsResult, analyticsResult] = await Promise.allSettled([
           fetchEarnings(getToken),
-          fetchHostAnalytics(user.id, listings),
+          fetchHostAnalytics(getToken, user.id, listings),
         ])
         if (cancelled) return
         if (earningsResult.status === 'fulfilled') setEarnings(earningsResult.value)

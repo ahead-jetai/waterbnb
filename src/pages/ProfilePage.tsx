@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { useClerk, useUser } from '@clerk/clerk-react'
+import { useAuth, useClerk, useUser } from '@clerk/clerk-react'
 import { useUserMode } from '../hooks/useUserMode'
 import { fetchHostProfile, updateHostBio } from '../utils/hostProfilesApi'
 
 /** "About you" card: the public bio shown on the user's host profile page. */
 function BioCard({ userId }: { userId: string }) {
+  const { getToken } = useAuth()
   const [bio, setBio] = useState('')
   const [draft, setDraft] = useState('')
   const [editing, setEditing] = useState(false)
@@ -23,7 +24,7 @@ function BioCard({ userId }: { userId: string }) {
     setError('')
     setSaving(true)
     try {
-      await updateHostBio(userId, draft.trim())
+      await updateHostBio(getToken, userId, draft.trim())
       setBio(draft.trim())
       setEditing(false)
     } catch (err) {

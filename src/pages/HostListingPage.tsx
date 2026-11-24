@@ -299,6 +299,7 @@ function Step2({ draft, onChange, onNext, onBack }: { draft: ListingDraft; onCha
 // ── Step 3: Photos & Story ─────────────────────────────────────────────────
 
 function Step3({ draft, onChange, onNext, onBack }: { draft: ListingDraft; onChange: React.Dispatch<React.SetStateAction<ListingDraft>>; onNext: () => void; onBack: () => void }) {
+  const { getToken, userId } = useAuth()
   const [uploadingCount, setUploadingCount] = useState(0)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
@@ -323,14 +324,15 @@ function Step3({ draft, onChange, onNext, onBack }: { draft: ListingDraft; onCha
   const removeImage = (url: string) => {
     onChange(d => ({ ...d, images: d.images.filter(u => u !== url) }))
     // fire-and-forget: clean up storage for uploaded photos
-    void deleteListingImage(url)
+    if (userId) void deleteListingImage(getToken, userId, url)
   }
 
   const handleFiles = (files: FileList | File[]) => {
+    if (!userId) return
     setUploadError(null)
     for (const file of Array.from(files)) {
       setUploadingCount(c => c + 1)
-      uploadListingImage(file)
+      uploadListingImage(getToken, userId, file)
         .then(addImage)
         .catch(err => setUploadError(err instanceof Error ? err.message : 'Upload failed. Please try again.'))
         .finally(() => setUploadingCount(c => c - 1))
@@ -668,6 +670,7 @@ export default function HostListingPage() {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [saved, setSaved] = useState<Listing | null>(null)
+  const [editListing, setEditListing] = useState<Listing | null>(null)
 
   // In edit mode, load the existing listing into the draft
   useEffect(() => {
@@ -675,7 +678,8 @@ export default function HostListingPage() {
     let cancelled = false
     fetchListing(editId).then(listing => {
       if (cancelled) return
-      if (listing) {
+      if (listing?.hostId && listing.hostId === user?.id) {
+        setEditListing(listing)
         setDraft({
           boatType: listing.boatType ?? 'other',
           title: listing.title,
@@ -691,16 +695,19 @@ export default function HostListingPage() {
       setLoading(false)
     })
     return () => { cancelled = true }
-  }, [editId])
+  }, [editId, user?.id])
 
   const handleSubmit = async () => {
+    if (!user?.id) return
     setSubmitting(true)
     setSubmitError(null)
     try {
-      const input = { ...draft, hostId: user?.id }
-      const listing = editId ? await updateListing(editId, input) : await createListing(input)
-      if (user?.id) await setListingAutoApprove(getToken, listing.id, draft.autoApproveBookings)
-      setSaved(listing)
+      const input = { ...draft, hostId: user.id }
+      const listing = editId ? await updateListing(getToken, editId, input) : await createListing(getToken, input)
+      if (editId && listing.autoApproveBookings !== draft.autoApproveBookings) {
+        await setListingAutoApprove(getToken, listing.id, draft.autoApproveBookings)
+      }
+      setSaved({ ...listing, autoApproveBookings: draft.autoApproveBookings })
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
     } finally {
@@ -709,6 +716,10 @@ export default function HostListingPage() {
   }
 
   if (saved) return <SuccessState listing={saved} isEdit={isEdit} />
+
+  if (editId && !loading && editListing?.id !== editId) {
+    return <p className="container-p py-16 text-center" role="alert">This listing is not available to edit.</p>
+  }
 
   if (loading) {
     return (

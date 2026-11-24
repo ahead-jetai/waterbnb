@@ -28,14 +28,14 @@ export default function HostingHomePage() {
     fetchHostListings(user.id).then(ls => {
       if (cancelled) return
       setMyListings(ls)
-      fetchHostAnalytics(user.id, ls)
+      fetchHostAnalytics(getToken, user.id, ls)
         .then(a => { if (!cancelled) setAnalytics(a) })
         .catch(() => {}) // dashboard cards just stay at their placeholders
     })
-    fetchHostBookings(user.id).then(bs => { if (!cancelled) setReservations(bs) })
-    fetchHostBookingRequests(user.id).then(bs => { if (!cancelled) setRequests(bs) })
+    fetchHostBookings(getToken, user.id).then(bs => { if (!cancelled) setReservations(bs) })
+    fetchHostBookingRequests(getToken, user.id).then(bs => { if (!cancelled) setRequests(bs) })
     return () => { cancelled = true }
-  }, [user?.id])
+  }, [getToken, user?.id])
 
   const today = new Date().toISOString().slice(0, 10)
   const upcoming = reservations.filter(b => b.checkOut >= today)
@@ -43,8 +43,8 @@ export default function HostingHomePage() {
   const refreshBookings = async () => {
     if (!user?.id) return
     const [confirmed, pending] = await Promise.all([
-      fetchHostBookings(user.id),
-      fetchHostBookingRequests(user.id),
+      fetchHostBookings(getToken, user.id),
+      fetchHostBookingRequests(getToken, user.id),
     ])
     setReservations(confirmed)
     setRequests(pending)

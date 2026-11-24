@@ -18,6 +18,7 @@ vi.mock('../utils/hostProfilesApi', () => ({
 }))
 
 vi.mock('@clerk/clerk-react', () => ({
+  useAuth: () => ({ getToken: async () => 'test-session' }),
   useUser: () => ({
     user: {
       id: 'user_1',

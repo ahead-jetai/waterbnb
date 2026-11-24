@@ -1,5 +1,4 @@
-import { supabase } from './supabase'
-import { fetchBlockedRanges } from './availabilityApi'
+import { authenticatedDb, listingPublicColumns, supabase, type TokenGetter } from './supabase'
 import type { Booking, BookingStatus, Listing, RefundStatus } from '../bookingTypes'
 
 type ListingRow = {
@@ -60,6 +59,8 @@ function listingRowToListing(row: ListingRow): Listing {
   }
 }
 
+const bookingColumns = 'id,listing_id,guest_id,check_in,check_out,guests,status,guest_name,guest_email,guest_phone,special_requests,subtotal,service_fee,total,booking_reference,created_at,refund_cutoff_at,refund_status'
+
 /** Map a raw bookings row (e.g. returned by the payments edge function) to a Booking. */
 export function rowToBooking(row: BookingRow): Booking {
   return {
@@ -87,18 +88,10 @@ export function rowToBooking(row: BookingRow): Booking {
   }
 }
 
-/** Date ranges (inclusive) currently booked for a listing — used to block unavailable dates. */
+/** Confirmed overnight ranges for a listing, with an exclusive checkout date. */
 export async function fetchBookedDateRanges(listingId: string): Promise<{ checkIn: string; checkOut: string }[]> {
-  const { data, error } = await supabase
-    .from('bookings')
-    .select('check_in, check_out')
-    .eq('listing_id', listingId)
-    .eq('status', 'confirmed')
-  if (error) {
-    console.error('Failed to fetch booked dates:', error.message)
-    return []
-  }
-  return (data as Pick<BookingRow, 'check_in' | 'check_out'>[]).map(r => ({ checkIn: r.check_in, checkOut: r.check_out }))
+  return (await fetchUnavailableRanges(listingId)).filter(r => r.source === 'booking')
+    .map(({ checkIn, checkOut }) => ({ checkIn, checkOut }))
 }
 
 export function rangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
@@ -111,17 +104,22 @@ export type UnavailableRange = {
   source: 'booking' | 'host'
 }
 
+type UnavailableRow = { listing_id: string; check_in: string; check_out: string; source: UnavailableRange['source'] }
+
+async function fetchAvailability(args: { p_listing?: string; p_start?: string; p_end?: string }): Promise<UnavailableRow[]> {
+  const { data, error } = await supabase.rpc('marketplace_unavailable_dates', args)
+  if (error) {
+    console.error('Failed to fetch availability:', error.message)
+    return []
+  }
+  return data as UnavailableRow[]
+}
+
 /** All dates a guest cannot book: confirmed bookings plus host-blocked ranges, soonest first. */
 export async function fetchUnavailableRanges(listingId: string): Promise<UnavailableRange[]> {
-  const [booked, blocked] = await Promise.all([
-    fetchBookedDateRanges(listingId),
-    fetchBlockedRanges(listingId),
-  ])
-  const ranges: UnavailableRange[] = [
-    ...booked.map(r => ({ ...r, source: 'booking' as const })),
-    ...blocked.map(r => ({ checkIn: r.startDate, checkOut: r.endDate, source: 'host' as const })),
-  ]
-  return ranges.sort((a, b) => a.checkIn.localeCompare(b.checkIn))
+  const rows = await fetchAvailability({ p_listing: listingId })
+  return rows.map(r => ({ checkIn: r.check_in, checkOut: r.check_out, source: r.source }))
+    .sort((a, b) => a.checkIn.localeCompare(b.checkIn))
 }
 
 /** True if the requested date range doesn't overlap any confirmed booking or host-blocked range for the listing. */
@@ -130,75 +128,55 @@ export async function isRangeAvailable(listingId: string, checkIn: string, check
   return !unavailable.some(b => rangesOverlap(checkIn, checkOut, b.checkIn, b.checkOut))
 }
 
-/** Booking previously saved for a payment reference — used to avoid duplicates on confirmation reloads. */
-export async function fetchBookingByReference(reference: string): Promise<Booking | null> {
-  const { data, error } = await supabase
-    .from('bookings')
-    .select('*')
-    .eq('booking_reference', reference)
-    .maybeSingle()
-  if (error) {
-    console.error('Failed to look up booking by reference:', error.message)
-    return null
-  }
-  return data ? rowToBooking(data as BookingRow) : null
-}
-
 /** All bookings for a guest, newest first, with the related listing embedded. */
-export async function fetchGuestBookings(guestId: string): Promise<Booking[]> {
-  const { data, error } = await supabase
+export async function fetchGuestBookings(getToken: TokenGetter, guestId: string): Promise<Booking[]> {
+  const { data, error } = await authenticatedDb(getToken)
     .from('bookings')
-    .select('*, listing:listings(*)')
+    .select(`${bookingColumns},listing:listings(${listingPublicColumns})`)
     .eq('guest_id', guestId)
     .order('check_in', { ascending: false })
+    .overrideTypes<BookingRow[], { merge: false }>()
   if (error) {
     console.error('Failed to fetch bookings:', error.message)
     return []
   }
-  return (data as BookingRow[]).map(rowToBooking)
+  return data.map(rowToBooking)
 }
 
 /** All confirmed bookings on a host's listings, soonest check-in first, with the listing embedded. */
-export async function fetchHostBookings(hostId: string): Promise<Booking[]> {
-  const { data, error } = await supabase
+export async function fetchHostBookings(getToken: TokenGetter, hostId: string): Promise<Booking[]> {
+  const { data, error } = await authenticatedDb(getToken)
     .from('bookings')
-    .select('*, listing:listings!inner(*)')
+    .select(`${bookingColumns},listing:listings!inner(${listingPublicColumns})`)
     .eq('listing.host_id', hostId)
     .eq('status', 'confirmed')
     .order('check_in', { ascending: true })
+    .overrideTypes<BookingRow[], { merge: false }>()
   if (error) {
     console.error('Failed to fetch host bookings:', error.message)
     return []
   }
-  return (data as BookingRow[]).map(rowToBooking)
+  return data.map(rowToBooking)
 }
 
 /** Pending booking requests on a host's listings, oldest first, with the listing embedded. */
-export async function fetchHostBookingRequests(hostId: string): Promise<Booking[]> {
-  const { data, error } = await supabase
+export async function fetchHostBookingRequests(getToken: TokenGetter, hostId: string): Promise<Booking[]> {
+  const { data, error } = await authenticatedDb(getToken)
     .from('bookings')
-    .select('*, listing:listings!inner(*)')
+    .select(`${bookingColumns},listing:listings!inner(${listingPublicColumns})`)
     .eq('listing.host_id', hostId)
     .eq('status', 'pending')
     .order('created_at', { ascending: true })
+    .overrideTypes<BookingRow[], { merge: false }>()
   if (error) {
     console.error('Failed to fetch host booking requests:', error.message)
     return []
   }
-  return (data as BookingRow[]).map(rowToBooking)
+  return data.map(rowToBooking)
 }
 
-/** Ids of listings with a confirmed booking overlapping the given date range — used to exclude them from search results. */
+/** Listings with a booking or host block overlapping the selected dates. */
 export async function fetchUnavailableListingIds(checkIn: string, checkOut: string): Promise<Set<string>> {
-  const { data, error } = await supabase
-    .from('bookings')
-    .select('listing_id, check_in, check_out')
-    .eq('status', 'confirmed')
-    .lt('check_in', checkOut)
-    .gt('check_out', checkIn)
-  if (error) {
-    console.error('Failed to fetch unavailable listings:', error.message)
-    return new Set()
-  }
-  return new Set((data as Pick<BookingRow, 'listing_id'>[]).map(r => r.listing_id))
+  const rows = await fetchAvailability({ p_start: checkIn, p_end: checkOut })
+  return new Set(rows.map(r => r.listing_id))
 }

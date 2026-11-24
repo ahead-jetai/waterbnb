@@ -8,33 +8,24 @@ const supabaseState: { bookings: BookingRow[]; blocked: BlockedRow[] } = {
   blocked: [],
 }
 
-function queryable(rows: Record<string, unknown>[]) {
-  const filtered = [...rows]
-  const builder = {
-    eq(col: string, val: unknown) {
-      return queryable(filtered.filter(r => r[col] === val))
-    },
-    order() {
-      return Promise.resolve({ data: filtered, error: null })
-    },
-    then(resolve: (v: { data: Record<string, unknown>[]; error: null }) => void) {
-      resolve({ data: filtered, error: null })
-    },
-  }
-  return builder
-}
-
 vi.mock('../utils/supabase', () => ({
   supabase: {
-    from: (table: string) => {
-      if (table === 'bookings') return { select: () => queryable(supabaseState.bookings) }
-      if (table === 'listing_blocked_dates') return { select: () => queryable(supabaseState.blocked) }
-      throw new Error(`unexpected table ${table}`)
+    rpc: (name: string, args: { p_listing?: string; p_start?: string; p_end?: string }) => {
+      if (name !== 'marketplace_unavailable_dates') throw new Error(`unexpected RPC ${name}`)
+      const rows = [
+        ...supabaseState.blocked.map(r => ({ listing_id: r.listing_id, check_in: r.start_date, check_out: r.end_date, source: 'host' })),
+        ...supabaseState.bookings.filter(r => r.status === 'confirmed').map(r => ({ ...r, source: 'booking' })),
+      ]
+      return {
+        data: rows.filter(r => (!args.p_listing || r.listing_id === args.p_listing)
+          && (!args.p_start || r.check_out > args.p_start) && (!args.p_end || r.check_in < args.p_end)),
+        error: null,
+      }
     },
   },
 }))
 
-import { rangesOverlap, isRangeAvailable, fetchBookedDateRanges, fetchUnavailableRanges } from '../utils/bookingsApi'
+import { rangesOverlap, isRangeAvailable, fetchBookedDateRanges, fetchUnavailableListingIds, fetchUnavailableRanges } from '../utils/bookingsApi'
 
 describe('rangesOverlap', () => {
   it('detects overlapping ranges', () => {
@@ -87,5 +78,10 @@ describe('availability with bookings and host blocks', () => {
 
   it('ignores blocks on other listings', async () => {
     expect(await isRangeAvailable('l2', '2026-09-03', '2026-09-08')).toBe(true)
+  })
+
+  it('uses the public read model for search results across listings', async () => {
+    supabaseState.blocked[0].listing_id = 'l2'
+    expect(await fetchUnavailableListingIds('2026-08-12', '2026-09-02')).toEqual(new Set(['l1', 'l2']))
   })
 })

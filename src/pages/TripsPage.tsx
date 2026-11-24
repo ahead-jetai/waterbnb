@@ -127,14 +127,14 @@ export default function TripsPage() {
   useEffect(() => {
     if (!user) return
     let cancelled = false
-    fetchGuestBookings(user.id).then(all => {
+    fetchGuestBookings(getToken, user.id).then(all => {
       if (!cancelled) {
         setBookings(all)
         setLoading(false)
       }
     })
     return () => { cancelled = true }
-  }, [user])
+  }, [getToken, user])
 
   const handleCancel = async (id: string) => {
     const booking = bookings.find(b => b.id === id)

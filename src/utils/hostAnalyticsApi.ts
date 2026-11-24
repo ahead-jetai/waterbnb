@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { authenticatedDb, supabase, type TokenGetter } from './supabase'
 import type { Listing } from '../bookingTypes'
 
 /**
@@ -18,10 +18,6 @@ type AnalyticsBookingRow = {
   guests: number
   subtotal: number
   created_at: string
-}
-
-type MarketBookingRow = AnalyticsBookingRow & {
-  listing: { boat_type: string; price_per_night: number; host_id: string | null } | null
 }
 
 export type MonthlyRevenue = {
@@ -79,24 +75,20 @@ function median(values: number[]): number | null {
 
 /**
  * Recommend a nightly price by blending the market rate for the same boat
- * type (realized booked rates when available, list prices otherwise) with a
- * demand signal from the listing's own occupancy.
+ * type (public advertised prices) with a demand signal from the listing's
+ * own occupancy. Other hosts' realized prices are private booking data.
  */
 function recommendPrice(
   listing: Listing,
   occupancyNext60: number,
   bookingsCount: number,
-  marketBookedRates: number[],
   marketListPrices: number[],
 ): PriceRecommendation {
   const current = listing.pricePerNight
-  const marketRate = median(marketBookedRates) ?? median(marketListPrices)
-  const marketNote =
-    median(marketBookedRates) !== null
-      ? `similar ${listing.boatType ?? 'boat'}s book at ~$${Math.round(median(marketBookedRates)!)}/night`
-      : marketRate !== null
-        ? `similar ${listing.boatType ?? 'boat'}s list at ~$${Math.round(marketRate)}/night`
-        : null
+  const marketRate = median(marketListPrices)
+  const marketNote = marketRate !== null
+    ? `similar ${listing.boatType ?? 'boat'}s list at ~$${Math.round(marketRate)}/night`
+    : null
 
   // Demand multiplier: a busy calendar supports charging more; an empty one
   // suggests the price is above what guests will pay.
@@ -137,51 +129,28 @@ function recommendPrice(
 }
 
 /** Full analytics bundle for one host: totals, monthly trend, and per-listing stats. */
-export async function fetchHostAnalytics(hostId: string, listings: Listing[]): Promise<HostAnalytics> {
+export async function fetchHostAnalytics(getToken: TokenGetter, hostId: string, listings: Listing[]): Promise<HostAnalytics> {
   const listingIds = listings.map(l => l.id)
 
-  const [own, market] = await Promise.all([
+  const [own, { data: allListings }] = await Promise.all([
     listingIds.length
-      ? supabase
+      ? authenticatedDb(getToken)
           .from('bookings')
           .select('listing_id, check_in, check_out, guests, subtotal, created_at')
           .in('listing_id', listingIds)
           .eq('status', 'confirmed')
       : Promise.resolve({ data: [], error: null }),
-    // All confirmed bookings in the app, with enough listing context to
-    // derive market rates per boat type.
-    supabase
-      .from('bookings')
-      .select('listing_id, check_in, check_out, guests, subtotal, created_at, listing:listings(boat_type, price_per_night, host_id)')
-      .eq('status', 'confirmed'),
+    supabase.from('listings').select('boat_type, price_per_night, host_id'),
   ])
   if (own.error) throw new Error(`Could not load bookings: ${own.error.message}`)
 
   const bookings = (own.data ?? []) as AnalyticsBookingRow[]
-  const marketBookings = ((market.error ? [] : market.data) ?? []) as unknown as MarketBookingRow[]
-
-  // List prices of everyone else's listings, per boat type — the fallback
-  // market signal when there are too few bookings to trust realized rates.
-  const { data: allListings } = await supabase
-    .from('listings')
-    .select('boat_type, price_per_night, host_id')
   const listPricesByType = new Map<string, number[]>()
   for (const l of allListings ?? []) {
     if (l.host_id === hostId) continue
     const arr = listPricesByType.get(l.boat_type) ?? []
     arr.push(Number(l.price_per_night))
     listPricesByType.set(l.boat_type, arr)
-  }
-
-  // Realized nightly rates by boat type from other hosts' bookings.
-  const bookedRatesByType = new Map<string, number[]>()
-  for (const b of marketBookings) {
-    if (!b.listing || b.listing.host_id === hostId) continue
-    const nights = nightsBetween(b.check_in, b.check_out)
-    if (!nights) continue
-    const arr = bookedRatesByType.get(b.listing.boat_type) ?? []
-    arr.push(Number(b.subtotal) / nights)
-    bookedRatesByType.set(b.listing.boat_type, arr)
   }
 
   const now = new Date()
@@ -249,7 +218,6 @@ export async function fetchHostAnalytics(hostId: string, listings: Listing[]): P
         listing,
         occupancyNext60,
         mine.length,
-        bookedRatesByType.get(listing.boatType ?? '') ?? [],
         listPricesByType.get(listing.boatType ?? '') ?? [],
       ),
     }

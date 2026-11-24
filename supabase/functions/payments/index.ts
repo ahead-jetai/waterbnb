@@ -34,14 +34,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import Stripe from 'npm:stripe@22'
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { createRemoteJWKSet, jwtVerify } from 'npm:jose@5'
+import { createClerkVerifier } from '../_shared/clerk.ts'
+import { getEnvironment, requireStripeKey } from '../_shared/environment.ts'
 
 // --- Step 0: configuration, failing fast with helpful errors -------------
 
-const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY')
-if (!stripeSecretKey) {
-  throw new Error('Missing STRIPE_SECRET_KEY')
-}
+const { mode, clientOrigin: clientUrl, clerkIssuer } = getEnvironment(name => Deno.env.get(name))
+const live = mode === 'production'
+const stripeSecretKey = requireStripeKey(Deno.env.get('STRIPE_SECRET_KEY'), live)
 
 // One Stripe client for ALL requests. The SDK pins the latest API version
 // (2026-06-24.dahlia at the time of writing) automatically.
@@ -53,11 +53,7 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 )
 
-// Where the SPA runs; used for Checkout/onboarding redirect URLs.
-const clientUrl = Deno.env.get('CLIENT_URL') ?? 'http://localhost:5173'
-const clientOrigin = new URL(clientUrl).origin
-const clerkIssuer = Deno.env.get('CLERK_ISSUER')
-const clerkKeys = clerkIssuer && createRemoteJWKSet(new URL('/.well-known/jwks.json', clerkIssuer))
+const verifiedUserId = createClerkVerifier(clerkIssuer, clientUrl)
 const webhookSecret = Deno.env.get('STRIPE_CHECKOUT_WEBHOOK_SECRET')
 const stripeCrypto = Stripe.createSubtleCryptoProvider()
 
@@ -93,7 +89,7 @@ type RefundBooking = {
 }
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': clientOrigin,
+  'Access-Control-Allow-Origin': clientUrl,
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-clerk-token',
 }
 
@@ -106,21 +102,6 @@ function json(body: unknown, status = 200): Response {
 
 function fail(status: number, message: string): Response {
   return json({ error: message }, status)
-}
-
-async function verifiedUserId(req: Request): Promise<string | undefined> {
-  const token = req.headers.get('x-clerk-token')
-  if (!token || !clerkKeys) return
-  try {
-    const { payload } = await jwtVerify(token, clerkKeys, {
-      issuer: clerkIssuer,
-      algorithms: ['RS256'],
-      requiredClaims: ['sub', 'exp', 'sid'],
-    })
-    if (payload.azp === clientOrigin && typeof payload.sid === 'string' && payload.sid) return payload.sub
-  } catch {
-    return
-  }
 }
 
 function nightsBetween(checkIn: string, checkOut: string): number {
@@ -883,6 +864,7 @@ async function webhook(req: Request): Promise<Response> {
   } catch {
     return fail(400, 'Invalid Stripe signature')
   }
+  if (Boolean(event.livemode) !== live) return fail(400, 'Stripe event does not match this environment')
   if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded' ||
       event.type === 'checkout.session.expired' || event.type === 'checkout.session.async_payment_failed') {
     const session = await stripeClient.checkout.sessions.retrieve(event.data.object.id)

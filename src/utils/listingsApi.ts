@@ -1,7 +1,6 @@
-import { supabase } from './supabase'
+import { authenticatedDb, listingPublicColumns, supabase, type TokenGetter } from './supabase'
 import { listings as mockListings } from '../data/listings'
 import { fetchUnavailableListingIds } from './bookingsApi'
-import { fetchHostBlockedListingIds } from './availabilityApi'
 import type { Listing } from '../bookingTypes'
 
 export type ListingFilters = {
@@ -75,8 +74,6 @@ function inputToRow(input: ListingInput) {
     images: input.images,
     description: input.description,
     price_per_night: input.pricePerNight,
-    host_id: input.hostId ?? null,
-    auto_approve_bookings: input.autoApproveBookings ?? true,
     // keep legacy columns in sync
     image: input.images[0] ?? '',
     tags: input.amenities,
@@ -85,7 +82,7 @@ function inputToRow(input: ListingInput) {
 
 /** All listings, newest first, optionally narrowed by location/price/boat type/date availability. Falls back to the bundled demo data if Supabase is unreachable. */
 export async function fetchListings(filters?: ListingFilters): Promise<Listing[]> {
-  let query = supabase.from('listings').select('*').order('created_at', { ascending: false })
+  let query = supabase.from('listings').select(listingPublicColumns).order('created_at', { ascending: false })
   if (filters?.location) query = query.ilike('location', `%${filters.location}%`)
   if (filters?.boatType) query = query.eq('boat_type', filters.boatType)
   if (filters?.minPrice != null) query = query.gte('price_per_night', filters.minPrice)
@@ -99,11 +96,8 @@ export async function fetchListings(filters?: ListingFilters): Promise<Listing[]
   let result = (data as ListingRow[]).map(rowToListing)
 
   if (filters?.checkIn && filters?.checkOut) {
-    const [booked, hostBlocked] = await Promise.all([
-      fetchUnavailableListingIds(filters.checkIn, filters.checkOut),
-      fetchHostBlockedListingIds(filters.checkIn, filters.checkOut),
-    ])
-    result = result.filter(l => !booked.has(l.id) && !hostBlocked.has(l.id))
+    const unavailable = await fetchUnavailableListingIds(filters.checkIn, filters.checkOut)
+    result = result.filter(l => !unavailable.has(l.id))
   }
 
   return result
@@ -111,28 +105,28 @@ export async function fetchListings(filters?: ListingFilters): Promise<Listing[]
 
 /** Single listing by id — from Supabase, falling back to the bundled demo data. */
 export async function fetchListing(id: string): Promise<Listing | null> {
-  const { data, error } = await supabase.from('listings').select('*').eq('id', id).maybeSingle()
+  const { data, error } = await supabase.from('listings').select(listingPublicColumns).eq('id', id).maybeSingle()
   if (data) return rowToListing(data as ListingRow)
   if (error) console.error('Failed to fetch listing:', error.message)
   return mockListings.find(l => l.id === id) ?? null
 }
 
-export async function createListing(input: ListingInput): Promise<Listing> {
-  const { data, error } = await supabase
+export async function createListing(getToken: TokenGetter, input: ListingInput): Promise<Listing> {
+  const { data, error } = await authenticatedDb(getToken)
     .from('listings')
-    .insert(inputToRow(input))
-    .select()
+    .insert({ ...inputToRow(input), host_id: input.hostId, auto_approve_bookings: input.autoApproveBookings ?? true })
+    .select(listingPublicColumns)
     .single()
   if (error) throw new Error(`Could not save listing: ${error.message}`)
   return rowToListing(data as ListingRow)
 }
 
-export async function updateListing(id: string, input: ListingInput): Promise<Listing> {
-  const { data, error } = await supabase
+export async function updateListing(getToken: TokenGetter, id: string, input: ListingInput): Promise<Listing> {
+  const { data, error } = await authenticatedDb(getToken)
     .from('listings')
     .update(inputToRow(input))
     .eq('id', id)
-    .select()
+    .select(listingPublicColumns)
     .single()
   if (error) throw new Error(`Could not update listing: ${error.message}`)
   return rowToListing(data as ListingRow)
@@ -142,7 +136,7 @@ export async function updateListing(id: string, input: ListingInput): Promise<Li
 export async function fetchHostListings(hostId: string): Promise<Listing[]> {
   const { data, error } = await supabase
     .from('listings')
-    .select('*')
+    .select(listingPublicColumns)
     .eq('host_id', hostId)
     .order('created_at', { ascending: false })
   if (error) return []

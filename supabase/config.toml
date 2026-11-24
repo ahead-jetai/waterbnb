@@ -1,2 +1,7 @@
+project_id = "waterbnb"
+
 [functions.payments]
+verify_jwt = false
+
+[functions.messages]
 verify_jwt = false

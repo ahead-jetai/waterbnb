@@ -14,25 +14,21 @@ type Props = {
 
 export default function Carousel({ slides, intervalMs = 3500 }: Props) {
   const [index, setIndex] = useState(0)
-  const timer = useRef<number | null>(null)
   const rootRef = useRef<HTMLDivElement | null>(null)
   const [paused, setPaused] = useState(false)
   const count = slides.length
 
   // autoplay
   useEffect(() => {
-    if (paused) return
-    timer.current && window.clearInterval(timer.current)
-    timer.current = window.setInterval(() => setIndex((i) => (i + 1) % count), intervalMs)
-    return () => {
-      if (timer.current) window.clearInterval(timer.current)
-    }
+    if (paused || count < 2) return
+    const timer = window.setInterval(() => setIndex((i) => (i + 1) % count), intervalMs)
+    return () => window.clearInterval(timer)
   }, [count, intervalMs, paused])
 
   // basic swipe support
   useEffect(() => {
     const el = rootRef.current
-    if (!el) return
+    if (!el || count < 2) return
     let startX = 0
     const onStart = (e: TouchEvent) => {
       startX = e.touches[0].clientX
@@ -40,8 +36,7 @@ export default function Carousel({ slides, intervalMs = 3500 }: Props) {
     const onMove = (e: TouchEvent) => {
       const dx = e.touches[0].clientX - startX
       if (Math.abs(dx) > 60) {
-        if (dx > 0) prev()
-        else next()
+        setIndex(i => (i + (dx > 0 ? -1 : 1) + count) % count)
         startX = e.touches[0].clientX // prevent multiple triggers
       }
     }
@@ -51,10 +46,10 @@ export default function Carousel({ slides, intervalMs = 3500 }: Props) {
       el.removeEventListener('touchstart', onStart)
       el.removeEventListener('touchmove', onMove)
     }
-  }, [])
+  }, [count])
 
-  const next = () => setIndex((i) => (i + 1) % count)
-  const prev = () => setIndex((i) => (i - 1 + count) % count)
+  const next = () => count && setIndex((i) => (i + 1) % count)
+  const prev = () => count && setIndex((i) => (i - 1 + count) % count)
 
   return (
     <section aria-label="Featured boats" className="container-p">

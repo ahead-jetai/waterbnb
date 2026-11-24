@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { useUser } from '@clerk/clerk-react'
+import { useAuth, useUser } from '@clerk/clerk-react'
 import { fetchListing } from '../utils/listingsApi'
 import { fetchBlockedRanges, addBlockedRange, removeBlockedRange, type BlockedRange } from '../utils/availabilityApi'
 import { fetchBookedDateRanges, rangesOverlap } from '../utils/bookingsApi'
@@ -11,6 +11,7 @@ import type { Listing } from '../bookingTypes'
 export default function HostAvailabilityPage() {
   const { id } = useParams<{ id: string }>()
   const { user } = useUser()
+  const { getToken } = useAuth()
   const [listing, setListing] = useState<Listing | null>(null)
   const [loading, setLoading] = useState(true)
   const [blocked, setBlocked] = useState<BlockedRange[]>([])
@@ -24,7 +25,7 @@ export default function HostAvailabilityPage() {
   useEffect(() => {
     if (!id) return
     let cancelled = false
-    Promise.all([fetchListing(id), fetchBlockedRanges(id), fetchBookedDateRanges(id)]).then(
+    Promise.all([fetchListing(id), fetchBlockedRanges(getToken, id), fetchBookedDateRanges(id)]).then(
       ([l, blockedRanges, bookedRanges]) => {
         if (cancelled) return
         setListing(l)
@@ -34,7 +35,7 @@ export default function HostAvailabilityPage() {
       }
     )
     return () => { cancelled = true }
-  }, [id])
+  }, [getToken, id])
 
   if (loading) {
     return (
@@ -44,7 +45,7 @@ export default function HostAvailabilityPage() {
     )
   }
 
-  if (!listing || (listing.hostId && user?.id !== listing.hostId)) {
+  if (!listing || !user || user.id !== listing.hostId) {
     return (
       <div className="container-p py-16 text-center">
         <h1 className="font-display text-3xl font-semibold mb-4">Not available</h1>
@@ -79,7 +80,7 @@ export default function HostAvailabilityPage() {
 
     setSaving(true)
     try {
-      const created = await addBlockedRange(listing.id, startDate, endDate, reason)
+      const created = await addBlockedRange(getToken, listing.id, startDate, endDate, reason)
       setBlocked(prev => [...prev, created].sort((a, b) => a.startDate.localeCompare(b.startDate)))
       setStartDate('')
       setEndDate('')
@@ -93,7 +94,7 @@ export default function HostAvailabilityPage() {
 
   const handleUnblock = async (rangeId: string) => {
     try {
-      await removeBlockedRange(rangeId)
+      await removeBlockedRange(getToken, rangeId)
       setBlocked(prev => prev.filter(b => b.id !== rangeId))
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Could not unblock those dates.')

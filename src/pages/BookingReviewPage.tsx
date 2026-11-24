@@ -9,16 +9,12 @@ export default function BookingReviewPage() {
   const { listingId } = useParams<{ listingId: string }>()
   const location = useLocation()
   const navigate = useNavigate()
-  const [bookingData, setBookingData] = useState<BookingData | null>(null)
+  const bookingData = location.state?.bookingData as BookingData | undefined
   const [listing, setListing] = useState<Listing | null>(null)
 
   useEffect(() => {
-    if (location.state && location.state.bookingData) {
-      setBookingData(location.state.bookingData)
-    } else {
-      navigate(`/listing/${listingId}`)
-    }
-  }, [location.state, listingId, navigate])
+    if (!bookingData) navigate(`/listing/${listingId}`)
+  }, [bookingData, listingId, navigate])
 
   useEffect(() => {
     if (!listingId) return

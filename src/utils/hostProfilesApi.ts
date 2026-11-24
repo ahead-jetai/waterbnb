@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { authenticatedDb, supabase, type TokenGetter } from './supabase'
 
 /**
  * Public host profile mirrored into Supabase. Clerk only exposes the signed-in
@@ -23,7 +23,7 @@ function rowToProfile(row: HostProfileRow): HostProfile {
 }
 
 export async function fetchHostProfile(id: string): Promise<HostProfile | null> {
-  const { data, error } = await supabase.from('host_profiles').select('*').eq('id', id).maybeSingle()
+  const { data, error } = await supabase.from('host_profiles').select('id,name,avatar_url,bio').eq('id', id).maybeSingle()
   if (error) {
     console.error('Failed to fetch host profile:', error.message)
     return null
@@ -32,10 +32,10 @@ export async function fetchHostProfile(id: string): Promise<HostProfile | null> 
 }
 
 /** Keep the public name/avatar in sync with Clerk without touching the bio. */
-export async function syncHostProfile(id: string, name: string, avatarUrl: string): Promise<void> {
-  const { error } = await supabase
+export async function syncHostProfile(getToken: TokenGetter, id: string, name: string, avatarUrl: string): Promise<void> {
+  const { error } = await authenticatedDb(getToken)
     .from('host_profiles')
-    .upsert({ id, name, avatar_url: avatarUrl, updated_at: new Date().toISOString() }, { onConflict: 'id' })
+    .upsert({ id, name, avatar_url: avatarUrl }, { onConflict: 'id' })
   if (error) console.error('Failed to sync host profile:', error.message)
 }
 
@@ -53,9 +53,9 @@ export function computeHostRating(
   return { rating: Math.round(weighted * 100) / 100, reviews: totalReviews }
 }
 
-export async function updateHostBio(id: string, bio: string): Promise<void> {
-  const { error } = await supabase
+export async function updateHostBio(getToken: TokenGetter, id: string, bio: string): Promise<void> {
+  const { error } = await authenticatedDb(getToken)
     .from('host_profiles')
-    .upsert({ id, bio, updated_at: new Date().toISOString() }, { onConflict: 'id' })
+    .upsert({ id, bio }, { onConflict: 'id' })
   if (error) throw new Error(`Could not save your bio: ${error.message}`)
 }
