@@ -51,10 +51,10 @@ describe('Header — signed out', () => {
     mockUpdate.mockReset()
   })
 
-  it('shows Sign in and Get started links', () => {
+  it('shows Sign in and pilot invitation links', () => {
     renderHeader()
     expect(screen.getAllByRole('link', { name: /sign in/i }).length).toBeGreaterThan(0)
-    expect(screen.getAllByRole('link', { name: /get started/i }).length).toBeGreaterThan(0)
+    expect(screen.getByRole('link', { name: /request an invite/i })).toHaveAttribute('href', '/support?topic=invite')
     expect(screen.queryByRole('link', { name: /your profile/i })).not.toBeInTheDocument()
   })
 

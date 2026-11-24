@@ -13,6 +13,7 @@ export type Listing = {
   boatType?: string
   hostId?: string
   autoApproveBookings?: boolean
+  pilotApproved?: boolean
 }
 
 export type BookingDates = {

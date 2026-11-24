@@ -1,4 +1,6 @@
 import { SignUp } from '@clerk/clerk-react'
+import { Link } from 'react-router-dom'
+import { SupportLink } from '../components/SupportLink'
 
 export default function SignUpPage() {
   return (
@@ -8,7 +10,7 @@ export default function SignUpPage() {
           Create your account
         </h1>
         <p className="text-slate-500 text-sm">
-          Join WaterBnB to book unique water experiences
+          The Los Angeles pilot is invitation-only. Use the invitation sent to you.
         </p>
       </div>
       <SignUp
@@ -16,6 +18,8 @@ export default function SignUpPage() {
         afterSignUpUrl="/"
         signInUrl="/sign-in"
       />
+      <p className="mt-4 text-sm"><SupportLink topic="invite">Request a pilot invitation</SupportLink></p>
+      <p className="mt-3 text-sm">Read our <Link to="/terms">Terms</Link> and <Link to="/privacy">Privacy Notice</Link>.</p>
     </div>
   )
 }

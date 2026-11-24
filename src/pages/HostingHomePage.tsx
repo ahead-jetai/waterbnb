@@ -25,7 +25,7 @@ export default function HostingHomePage() {
   useEffect(() => {
     if (!user?.id) return
     let cancelled = false
-    fetchHostListings(user.id).then(ls => {
+    fetchHostListings(user.id, getToken).then(ls => {
       if (cancelled) return
       setMyListings(ls)
       fetchHostAnalytics(getToken, user.id, ls)
@@ -241,8 +241,7 @@ export default function HostingHomePage() {
               You don't have any listings yet
             </h2>
             <p className="text-slate-500 mt-2 max-w-md mx-auto">
-              List your boat in a few minutes and start earning. Hosts in your area
-              average $2,400 a month.
+              Save a moored-stay listing draft for the Los Angeles pilot. An operator reviews each listing before publication.
             </p>
             <div className="mt-6 flex justify-center gap-3">
               <Link to="/host/list" className="btn btn-primary no-underline">
@@ -266,7 +265,7 @@ export default function HostingHomePage() {
             <ul role="list" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {myListings.map(l => (
                 <li key={l.id} className="card overflow-hidden">
-                  <Link to={`/listing/${l.id}`} className="block no-underline">
+                  <Link to={l.pilotApproved ? `/listing/${l.id}` : `/host/list/${l.id}/edit`} className="block no-underline">
                     {l.image ? (
                       <img src={l.image} alt={l.title} className="w-full h-44 object-cover" />
                     ) : (
@@ -276,6 +275,7 @@ export default function HostingHomePage() {
                   <div className="p-4">
                     <p className="font-semibold text-slate-900 truncate">{l.title}</p>
                     <p className="text-sm text-slate-500 mt-0.5">{l.location}</p>
+                    <p className="text-xs text-slate-500 mt-1">{l.pilotApproved ? 'Pilot approved' : 'Draft · awaiting pilot review'}</p>
                     <p className="font-display font-semibold text-brand mt-1">
                       ${l.pricePerNight}<span className="text-xs text-slate-400 font-sans">/night</span>
                     </p>
@@ -286,9 +286,9 @@ export default function HostingHomePage() {
                       <Link to={`/host/list/${l.id}/availability`} className="btn btn-secondary no-underline text-sm py-1.5 px-3 flex-1 text-center">
                         Calendar
                       </Link>
-                      <Link to={`/listing/${l.id}`} className="btn btn-primary no-underline text-sm py-1.5 px-3 flex-1 text-center">
-                        View
-                      </Link>
+                      {l.pilotApproved && (
+                        <Link to={`/listing/${l.id}`} className="btn btn-primary no-underline text-sm py-1.5 px-3 flex-1 text-center">View</Link>
+                      )}
                     </div>
                   </div>
                 </li>

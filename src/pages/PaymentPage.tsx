@@ -8,6 +8,7 @@ import { calculateBookingTotals, calculateNights } from '../utils/booking'
 import { BookingProgress } from '../components/booking'
 import { bookingModeLabel, bookingModeSummary, isInstantBooking } from '../utils/bookingMode'
 import { rowToBooking } from '../utils/bookingsApi'
+import { SupportLink } from '../components/SupportLink'
 
 export default function PaymentPage() {
   const { listingId } = useParams<{ listingId: string }>()
@@ -36,11 +37,15 @@ export default function PaymentPage() {
   useEffect(() => {
     if (!listingId) return
     let cancelled = false
-    fetchListing(listingId)
-      .then(l => { if (!cancelled) setListing(l) })
+    fetchListing(listingId, approvedBookingId ? getToken : undefined)
+      .then(l => {
+        if (cancelled) return
+        setListing(l)
+        if (!l) setError('This stay is not currently available.')
+      })
       .catch(() => { if (!cancelled) setError('Could not load this listing. Please try again.') })
     return () => { cancelled = true }
-  }, [listingId])
+  }, [approvedBookingId, getToken, listingId])
 
   useEffect(() => {
     if (approvedBookingId) return
@@ -199,7 +204,8 @@ export default function PaymentPage() {
               </p>
               {(approvedBookingId || isInstantBooking(listing)) && (
                 <p className="text-xs text-slate-600 text-center mt-2">
-                  Cancel at least 48 hours before check-in for a full refund, including fees. Contact support for later cancellations.
+                  Cancel at least 48 hours before local check-in for a full refund, including fees.
+                  {' '}Read the <Link to="/cancellation">cancellation policy</Link> or <SupportLink topic="cancellation" />.
                 </p>
               )}
             </div>

@@ -18,13 +18,13 @@ vi.mock('@clerk/clerk-react', () => ({
   }),
 }))
 
-import { listings as mockListings } from '../data/listings'
 import type { Listing } from '../bookingTypes'
 
 // What fetchListings resolves with; the API already returns newest-first, so array order = "Newest".
-let fetchedListings: Listing[] = mockListings
+let fetchedListings: Listing[] = []
+let unavailable = false
 vi.mock('../utils/listingsApi', () => ({
-  fetchListings: () => Promise.resolve(fetchedListings),
+  fetchListings: () => unavailable ? Promise.reject(new Error('Catalog unavailable')) : Promise.resolve(fetchedListings),
 }))
 
 import HomePage from '../pages/HomePage'
@@ -46,9 +46,9 @@ describe('HomePage — signed out', () => {
     clerkState.metadata = {}
   })
 
-  it('shows the marketing landing with register and sign-in CTAs', () => {
+  it('shows the pilot invitation and sign-in CTAs', () => {
     renderHome()
-    expect(screen.getByRole('link', { name: /create a free account/i })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /request an invite/i })).toHaveAttribute('href', '/support?topic=invite')
     expect(screen.getAllByRole('link', { name: /sign in/i }).length).toBeGreaterThan(0)
   })
 
@@ -62,6 +62,8 @@ describe('HomePage — signed in, traveling mode', () => {
   beforeEach(() => {
     clerkState.signedIn = true
     clerkState.metadata = {}
+    fetchedListings = []
+    unavailable = false
   })
 
   it('greets the user and shows the listings grid', () => {
@@ -73,6 +75,23 @@ describe('HomePage — signed in, traveling mode', () => {
   it('does not show register CTAs', () => {
     renderHome()
     expect(screen.queryByRole('link', { name: /create a free account/i })).not.toBeInTheDocument()
+  })
+
+  it('shows an empty live catalog without substituting demo inventory', async () => {
+    renderHome()
+    expect(await screen.findByText('No approved stays are listed yet.')).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Try the demo' })).toHaveAttribute('href', '/demo')
+    expect(screen.queryByRole('article')).not.toBeInTheDocument()
+  })
+
+  it('keeps a failed catalog distinct from an empty catalog and lets the guest retry', async () => {
+    unavailable = true
+    renderHome()
+    expect(await screen.findByRole('alert')).toHaveTextContent("couldn't load live listings")
+    expect(screen.queryByText('No approved stays are listed yet.')).not.toBeInTheDocument()
+    unavailable = false
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(await screen.findByText('No approved stays are listed yet.')).toBeVisible()
   })
 })
 
@@ -110,6 +129,7 @@ describe('HomePage — sort dropdown', () => {
     clerkState.signedIn = true
     clerkState.metadata = {}
     fetchedListings = fixture
+    unavailable = false
   })
 
   it('defaults to "Newest" and keeps the fetched order', async () => {

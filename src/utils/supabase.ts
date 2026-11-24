@@ -14,7 +14,7 @@ export function authenticatedDb(getToken: TokenGetter) {
   return createClient(supabaseUrl, supabaseKey, { accessToken: getToken })
 }
 
-export const listingPublicColumns = 'id,title,location,price_per_night,rating,reviews,image,tags,created_at,boat_type,capacity,amenities,images,description,host_id,auto_approve_bookings'
+export const listingPublicColumns = 'id,title,location,price_per_night,rating,reviews,image,tags,created_at,boat_type,capacity,amenities,images,description,host_id,auto_approve_bookings,pilot_approved_at'
 
 const LISTING_IMAGES_BUCKET = 'listing-images'
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB, matches the bucket limit

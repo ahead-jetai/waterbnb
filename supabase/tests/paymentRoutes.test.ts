@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   createRefund: vi.fn(),
   retrieveRefund: vi.fn(),
   rpc: vi.fn(),
+  pilotRpc: vi.fn(),
   from: vi.fn(),
   serve: vi.fn<(handler: (req: Request) => Promise<Response>) => void>(),
 }))
@@ -19,7 +20,11 @@ vi.mock('npm:jose@5', () => ({
   jwtVerify: mocks.jwtVerify,
 }))
 vi.mock('npm:@supabase/supabase-js@2', () => ({
-  createClient: () => ({ from: mocks.from, rpc: mocks.rpc }),
+  createClient: () => ({
+    from: mocks.from,
+    rpc: (name: string, input: Record<string, unknown>) =>
+      name === 'pilot_can_book' ? mocks.pilotRpc(input) : mocks.rpc(name, input),
+  }),
 }))
 vi.mock('npm:stripe@22', () => ({
   default: class {
@@ -78,9 +83,10 @@ afterAll(() => vi.unstubAllGlobals())
 beforeEach(() => {
   for (const mock of [
     mocks.jwtVerify, mocks.constructEvent, mocks.retrieve, mocks.from, mocks.rpc,
-    mocks.createSession, mocks.retrieveAccount, mocks.createRefund, mocks.retrieveRefund,
+    mocks.createSession, mocks.retrieveAccount, mocks.createRefund, mocks.retrieveRefund, mocks.pilotRpc,
   ]) mock.mockReset()
   mocks.jwtVerify.mockResolvedValue({ payload: { sub: 'verified-user', azp: origin, sid: 'session' } })
+  mocks.pilotRpc.mockResolvedValue({ data: true })
 })
 
 describe('payment route authorization', () => {
@@ -233,6 +239,21 @@ function mockCheckoutLookup() {
 }
 
 describe('checkout holds', () => {
+  it.each(['checkout', 'booking-request'])('blocks %s before creating a booking or Stripe session without an invite', async route => {
+    mocks.pilotRpc.mockResolvedValue({ data: false })
+    expect((await post(route, { ...checkoutBody, guestId: 'someone-else' }, signedIn)).status).toBe(403)
+    expect(mocks.pilotRpc).toHaveBeenCalledWith({ p_guest: 'verified-user', p_listing: 'listing' })
+    expect(mocks.from).not.toHaveBeenCalled()
+    expect(mocks.createSession).not.toHaveBeenCalled()
+  })
+
+  it('does not return an attached Checkout session to someone whose pilot access was revoked', async () => {
+    query({ ...heldBooking, listing: { host_id: 'host' }, checkout_session_id: 'cs_test' })
+    mocks.pilotRpc.mockResolvedValue({ data: false })
+    expect((await post('approved-request-checkout', { bookingId }, signedIn)).status).toBe(403)
+    expect(mocks.retrieve).not.toHaveBeenCalled()
+  })
+
   it('does not create a Checkout session when the database rejects an overlapping reservation', async () => {
     const expired = query([])
     mockCheckoutLookup()

@@ -1,5 +1,4 @@
 import { authenticatedDb, listingPublicColumns, supabase, type TokenGetter } from './supabase'
-import { listings as mockListings } from '../data/listings'
 import { fetchUnavailableListingIds } from './bookingsApi'
 import type { Listing } from '../bookingTypes'
 
@@ -42,6 +41,7 @@ type ListingRow = {
   image: string | null
   host_id: string | null
   auto_approve_bookings?: boolean | null
+  pilot_approved_at?: string | null
   created_at: string
 }
 
@@ -61,6 +61,7 @@ function rowToListing(row: ListingRow): Listing {
     boatType: row.boat_type,
     hostId: row.host_id ?? undefined,
     autoApproveBookings: row.auto_approve_bookings ?? true,
+    pilotApproved: Boolean(row.pilot_approved_at),
   }
 }
 
@@ -80,20 +81,18 @@ function inputToRow(input: ListingInput) {
   }
 }
 
-/** All listings, newest first, optionally narrowed by location/price/boat type/date availability. Falls back to the bundled demo data if Supabase is unreachable. */
+/** Approved live listings, newest first; database access rules also enforce publication. */
 export async function fetchListings(filters?: ListingFilters): Promise<Listing[]> {
-  let query = supabase.from('listings').select(listingPublicColumns).order('created_at', { ascending: false })
+  let query = supabase.from('listings').select(listingPublicColumns).not('pilot_approved_at', 'is', null)
+    .order('created_at', { ascending: false })
   if (filters?.location) query = query.ilike('location', `%${filters.location}%`)
   if (filters?.boatType) query = query.eq('boat_type', filters.boatType)
   if (filters?.minPrice != null) query = query.gte('price_per_night', filters.minPrice)
   if (filters?.maxPrice != null) query = query.lte('price_per_night', filters.maxPrice)
 
   const { data, error } = await query
-  if (error) {
-    console.error('Failed to fetch listings:', error.message)
-    return mockListings
-  }
-  let result = (data as ListingRow[]).map(rowToListing)
+  if (error) throw new Error('Could not load live listings.')
+  let result = (data ?? []).map(rowToListing)
 
   if (filters?.checkIn && filters?.checkOut) {
     const unavailable = await fetchUnavailableListingIds(filters.checkIn, filters.checkOut)
@@ -103,12 +102,14 @@ export async function fetchListings(filters?: ListingFilters): Promise<Listing[]
   return result
 }
 
-/** Single listing by id — from Supabase, falling back to the bundled demo data. */
-export async function fetchListing(id: string): Promise<Listing | null> {
-  const { data, error } = await supabase.from('listings').select(listingPublicColumns).eq('id', id).maybeSingle()
-  if (data) return rowToListing(data as ListingRow)
-  if (error) console.error('Failed to fetch listing:', error.message)
-  return mockListings.find(l => l.id === id) ?? null
+/** Pass a Clerk session only for host management or an existing trip. */
+export async function fetchListing(id: string, getToken?: TokenGetter): Promise<Listing | null> {
+  const db = getToken ? authenticatedDb(getToken) : supabase
+  let query = db.from('listings').select(listingPublicColumns).eq('id', id)
+  if (!getToken) query = query.not('pilot_approved_at', 'is', null)
+  const { data, error } = await query.maybeSingle()
+  if (error) throw new Error('Could not load the listing.')
+  return data ? rowToListing(data) : null
 }
 
 export async function createListing(getToken: TokenGetter, input: ListingInput): Promise<Listing> {
@@ -132,13 +133,16 @@ export async function updateListing(getToken: TokenGetter, id: string, input: Li
   return rowToListing(data as ListingRow)
 }
 
-/** Listings owned by a host, newest first. */
-export async function fetchHostListings(hostId: string): Promise<Listing[]> {
-  const { data, error } = await supabase
+/** Public profile results, or the host's own drafts when a session is passed. */
+export async function fetchHostListings(hostId: string, getToken?: TokenGetter): Promise<Listing[]> {
+  const db = getToken ? authenticatedDb(getToken) : supabase
+  let query = db
     .from('listings')
     .select(listingPublicColumns)
     .eq('host_id', hostId)
     .order('created_at', { ascending: false })
+  if (!getToken) query = query.not('pilot_approved_at', 'is', null)
+  const { data, error } = await query
   if (error) return []
   return (data as ListingRow[]).map(rowToListing)
 }

@@ -4,6 +4,7 @@ import { useAuth, useUser } from '@clerk/clerk-react'
 import { uploadListingImage, deleteListingImage } from '../utils/supabase'
 import { createListing, updateListing, fetchListing } from '../utils/listingsApi'
 import { setListingAutoApprove } from '../utils/paymentsApi'
+import { SupportLink } from '../components/SupportLink'
 import type { Listing } from '../bookingTypes'
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -300,6 +301,7 @@ function Step2({ draft, onChange, onNext, onBack }: { draft: ListingDraft; onCha
 
 function Step3({ draft, onChange, onNext, onBack }: { draft: ListingDraft; onChange: React.Dispatch<React.SetStateAction<ListingDraft>>; onNext: () => void; onBack: () => void }) {
   const { getToken, userId } = useAuth()
+  const newUploads = useRef(new Set<string>())
   const [uploadingCount, setUploadingCount] = useState(0)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
@@ -323,8 +325,7 @@ function Step3({ draft, onChange, onNext, onBack }: { draft: ListingDraft; onCha
 
   const removeImage = (url: string) => {
     onChange(d => ({ ...d, images: d.images.filter(u => u !== url) }))
-    // fire-and-forget: clean up storage for uploaded photos
-    if (userId) void deleteListingImage(getToken, userId, url)
+    if (userId && newUploads.current.delete(url)) void deleteListingImage(getToken, userId, url)
   }
 
   const handleFiles = (files: FileList | File[]) => {
@@ -333,7 +334,10 @@ function Step3({ draft, onChange, onNext, onBack }: { draft: ListingDraft; onCha
     for (const file of Array.from(files)) {
       setUploadingCount(c => c + 1)
       uploadListingImage(getToken, userId, file)
-        .then(addImage)
+        .then(url => {
+          newUploads.current.add(url)
+          addImage(url)
+        })
         .catch(err => setUploadError(err instanceof Error ? err.message : 'Upload failed. Please try again.'))
         .finally(() => setUploadingCount(c => c - 1))
     }
@@ -528,7 +532,7 @@ function Step4({ draft, onChange, onSubmit, onBack, submitting, submitError, isE
           <div>
             <h3 className="font-semibold text-sm text-slate-700">Booking approval</h3>
             <p className="text-sm text-slate-500 mt-1 max-w-lg">
-              Instant booking confirms paid guests immediately and opens chat. Host review keeps paid requests pending until you approve one.
+              Instant booking confirms eligible guests after payment. Host review requires your approval before the guest can pay.
             </p>
           </div>
           <button
@@ -598,7 +602,7 @@ function Step4({ draft, onChange, onSubmit, onBack, submitting, submitError, isE
       <div className="mt-6 flex justify-between">
         <button onClick={onBack} disabled={submitting} className="btn btn-secondary px-6 disabled:opacity-40">← Back</button>
         <button onClick={onSubmit} disabled={submitting} className="btn btn-primary px-8 disabled:opacity-40 disabled:cursor-not-allowed">
-          {submitting ? 'Saving…' : isEdit ? 'Save changes' : 'Publish listing'}
+          {submitting ? 'Saving…' : isEdit ? 'Save changes' : 'Save listing draft'}
         </button>
       </div>
     </div>
@@ -620,10 +624,12 @@ function SuccessState({ listing, isEdit }: { listing: Listing; isEdit: boolean }
         </div>
 
         <h1 className="font-display text-4xl font-medium text-muted mb-3 animate-fade-up [animation-delay:0.1s]">
-          {isEdit ? 'Your changes are saved!' : 'Your listing is live!'}
+          {isEdit ? 'Your changes are saved!' : 'Your listing draft is saved'}
         </h1>
         <p className="text-slate-500 mb-8 animate-fade-up [animation-delay:0.2s]">
-          <strong className="text-slate-700">{listing.title}</strong> is now visible to travelers on WaterBnB.
+          <strong className="text-slate-700">{listing.title}</strong>{listing.pilotApproved
+            ? ' is visible in the pilot catalog.'
+            : <> won't appear in the pilot catalog until it is approved. <SupportLink topic="invite">Ask about listing review</SupportLink>.</>}
         </p>
 
         {/* Preview card */}
@@ -644,9 +650,9 @@ function SuccessState({ listing, isEdit }: { listing: Listing; isEdit: boolean }
         </div>
 
         <div className="flex gap-3 justify-center animate-fade-up [animation-delay:0.4s]">
-          <Link to={`/listing/${listing.id}`} className="btn btn-primary no-underline">
-            View your listing
-          </Link>
+          {listing.pilotApproved && (
+            <Link to={`/listing/${listing.id}`} className="btn btn-primary no-underline">View your listing</Link>
+          )}
           <Link to="/hosting" className="btn btn-secondary no-underline">
             Go to host dashboard
           </Link>
@@ -676,7 +682,7 @@ export default function HostListingPage() {
   useEffect(() => {
     if (!editId) return
     let cancelled = false
-    fetchListing(editId).then(listing => {
+    fetchListing(editId, getToken).then(listing => {
       if (cancelled) return
       if (listing?.hostId && listing.hostId === user?.id) {
         setEditListing(listing)
@@ -693,9 +699,14 @@ export default function HostListingPage() {
         })
       }
       setLoading(false)
+    }).catch(() => {
+      if (!cancelled) {
+        setSubmitError("We couldn't load this listing for editing.")
+        setLoading(false)
+      }
     })
     return () => { cancelled = true }
-  }, [editId, user?.id])
+  }, [editId, getToken, user?.id])
 
   const handleSubmit = async () => {
     if (!user?.id) return
@@ -718,7 +729,7 @@ export default function HostListingPage() {
   if (saved) return <SuccessState listing={saved} isEdit={isEdit} />
 
   if (editId && !loading && editListing?.id !== editId) {
-    return <p className="container-p py-16 text-center" role="alert">This listing is not available to edit.</p>
+    return <p className="container-p py-16 text-center" role="alert">{submitError ?? 'This listing is not available to edit.'}</p>
   }
 
   if (loading) {

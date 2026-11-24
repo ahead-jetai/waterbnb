@@ -86,7 +86,7 @@ See the [staging runbook](docs/plans/staging-runbook.md) for local release check
 
 - **Demo mode**: Open **Demo mode** in your profile for an automatic walkthrough, or **Try the demo** in the footer. `/demo` is also accessible while signed out. Follow fictional host Maya and guest Alex through sign-in, host setup, listing creation, booking approval, checkout, and a simulated host payout. Pause, change speed, step through manually, or replay. The demo uses local fixtures, replaces the live app shell, and never writes account, listing, booking, or payment data. Exiting discards the simulation.
 
-- **Listing Display**: Responsive grid layout (1-4 columns based on screen size) with real images from Unsplash
+- **Los Angeles pilot**: The live catalog shows only approved moored overnight stays. Demo inventory stays in `/demo`, and booking is closed until explicitly enabled for invited guests. See the [pilot launch checklist](docs/plans/los-angeles-pilot.md).
 - **Clickable Listings**: Each listing card navigates to a unique URL (`/listing/:id`)
 - **Listing Detail Pages**: Full-width hero image, booking form with date pickers and guest selection
 - **Header Navigation**: Sticky header with mobile-responsive hamburger menu

@@ -23,6 +23,7 @@ import NotificationsPage from './pages/NotificationsPage'
 import SignInPage from './pages/SignInPage'
 import SignUpPage from './pages/SignUpPage'
 import DemoPage from './pages/DemoPage'
+import { CancellationPage, PrivacyPage, SafetyPage, SupportPage, TermsPage } from './pages/PublicInfoPage'
 
 export default function App() {
   return <BrowserRouter><AppContent /></BrowserRouter>
@@ -43,6 +44,11 @@ function AppContent() {
         <Route path="/" element={<HomePage />} />
         <Route path="/sign-in" element={<SignInPage />} />
         <Route path="/sign-up" element={<SignUpPage />} />
+        <Route path="/terms" element={<TermsPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/cancellation" element={<CancellationPage />} />
+        <Route path="/support" element={<SupportPage />} />
+        <Route path="/safety" element={<SafetyPage />} />
 
         {/* Traveler routes */}
         <Route

@@ -89,8 +89,8 @@ export function rowToBooking(row: BookingRow): Booking {
 }
 
 /** Confirmed overnight ranges for a listing, with an exclusive checkout date. */
-export async function fetchBookedDateRanges(listingId: string): Promise<{ checkIn: string; checkOut: string }[]> {
-  return (await fetchUnavailableRanges(listingId)).filter(r => r.source === 'booking')
+export async function fetchBookedDateRanges(listingId: string, getToken?: TokenGetter): Promise<{ checkIn: string; checkOut: string }[]> {
+  return (await fetchUnavailableRanges(listingId, getToken)).filter(r => r.source === 'booking')
     .map(({ checkIn, checkOut }) => ({ checkIn, checkOut }))
 }
 
@@ -106,18 +106,15 @@ export type UnavailableRange = {
 
 type UnavailableRow = { listing_id: string; check_in: string; check_out: string; source: UnavailableRange['source'] }
 
-async function fetchAvailability(args: { p_listing?: string; p_start?: string; p_end?: string }): Promise<UnavailableRow[]> {
-  const { data, error } = await supabase.rpc('marketplace_unavailable_dates', args)
-  if (error) {
-    console.error('Failed to fetch availability:', error.message)
-    return []
-  }
+async function fetchAvailability(args: { p_listing?: string; p_start?: string; p_end?: string }, getToken?: TokenGetter): Promise<UnavailableRow[]> {
+  const { data, error } = await (getToken ? authenticatedDb(getToken) : supabase).rpc('marketplace_unavailable_dates', args)
+  if (error) throw new Error('Could not load date availability.')
   return data as UnavailableRow[]
 }
 
 /** All dates a guest cannot book: confirmed bookings plus host-blocked ranges, soonest first. */
-export async function fetchUnavailableRanges(listingId: string): Promise<UnavailableRange[]> {
-  const rows = await fetchAvailability({ p_listing: listingId })
+export async function fetchUnavailableRanges(listingId: string, getToken?: TokenGetter): Promise<UnavailableRange[]> {
+  const rows = await fetchAvailability({ p_listing: listingId }, getToken)
   return rows.map(r => ({ checkIn: r.check_in, checkOut: r.check_out, source: r.source }))
     .sort((a, b) => a.checkIn.localeCompare(b.checkIn))
 }

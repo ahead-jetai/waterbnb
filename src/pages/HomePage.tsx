@@ -5,10 +5,10 @@ import Hero from '../components/Hero'
 import Carousel from '../components/Carousel'
 import ListingCard from '../components/ListingCard'
 import SearchFilters from '../components/SearchFilters'
-import { listings as mockListings } from '../data/listings'
 import { fetchListings, type ListingFilters } from '../utils/listingsApi'
 import { useUserMode } from '../hooks/useUserMode'
 import type { Listing } from '../bookingTypes'
+import { SupportLink } from '../components/SupportLink'
 
 // Served from public/images — bundled with the app, no external hosts to fail.
 const carouselSlides = [
@@ -29,9 +29,7 @@ function GuestLanding() {
       <Hero
         ctas={
           <>
-            <Link to="/sign-up" className="btn btn-primary no-underline" aria-label="Create a free account">
-              Get Started — It's Free
-            </Link>
+            <SupportLink topic="invite" className="btn btn-primary no-underline">Request an invite</SupportLink>
             <Link to="/sign-in" className="btn btn-secondary no-underline" aria-label="Sign in">
               Sign in
             </Link>
@@ -44,15 +42,13 @@ function GuestLanding() {
 
       <section aria-labelledby="join-heading" className="container-p mt-14 mb-16 text-center">
         <h2 id="join-heading" className="font-display text-3xl font-medium text-muted">
-          Members see it all
+          Start with the Los Angeles pilot
         </h2>
         <p className="text-slate-500 mt-2 max-w-xl mx-auto">
-          Create a free account to browse hundreds of boats, houseboats, and yachts —
-          or switch to hosting and earn money with your own boat.
+          We're starting with invitation-only, moored overnight stays. The demo is open to everyone and does not create a booking.
         </p>
         <div className="mt-6 flex justify-center gap-3">
-          <Link to="/sign-up" className="btn btn-primary no-underline">Create free account</Link>
-          <Link to="/sign-in" className="btn btn-secondary no-underline">Sign in</Link>
+          <Link to="/demo" className="btn btn-secondary no-underline">Try the demo</Link>
         </div>
       </section>
     </main>
@@ -63,23 +59,25 @@ function GuestLanding() {
 function TravelerHome() {
   const { user } = useUser()
   const firstName = user?.firstName
-  const [listings, setListings] = useState<Listing[]>(mockListings)
   const [filters, setFilters] = useState<ListingFilters>({})
-  const [loading, setLoading] = useState(true)
+  const [attempt, setAttempt] = useState(0)
+  const [result, setResult] = useState<{ filters: ListingFilters; attempt: number; listings: Listing[] | null } | null>(null)
 
   useEffect(() => {
     let cancelled = false
     fetchListings(filters).then(all => {
-      if (!cancelled) {
-        setListings(all)
-        setLoading(false)
-      }
+      if (!cancelled) setResult({ filters, attempt, listings: all })
+    }).catch(() => {
+      if (!cancelled) setResult({ filters, attempt, listings: null })
     })
     return () => { cancelled = true }
-  }, [filters])
+  }, [filters, attempt])
 
+  const current = result?.filters === filters && result.attempt === attempt ? result : null
+  const hasFilters = Boolean(filters.location || filters.boatType || filters.checkIn || filters.checkOut ||
+    filters.minPrice != null || filters.maxPrice != null)
   const sortedListings = useMemo(() => {
-    const sorted = [...listings]
+    const sorted = [...(current?.listings ?? [])]
     const sort = filters.sort ?? 'newest'
     if (sort === 'price-asc') {
       sorted.sort((a, b) => a.pricePerNight - b.pricePerNight)
@@ -89,7 +87,7 @@ function TravelerHome() {
       sorted.sort((a, b) => b.rating - a.rating)
     }
     return sorted
-  }, [listings, filters.sort])
+  }, [current, filters.sort])
 
   return (
     <main>
@@ -110,14 +108,24 @@ function TravelerHome() {
             <h2 id="featured-heading" className="font-display text-3xl font-medium text-muted">
               Featured Listings
             </h2>
-            <p className="text-slate-500 mt-1">Handpicked stays on boats and houseboats worldwide.</p>
+            <p className="text-slate-500 mt-1">Approved stays in the Los Angeles pilot. Booking requires an invitation.</p>
           </div>
         </div>
         <SearchFilters filters={filters} onChange={setFilters} />
-        {loading ? (
-          <div className="text-slate-400 text-sm py-8 text-center">Loading listings…</div>
+        {!current ? (
+          <div role="status" className="text-slate-400 text-sm py-8 text-center">Loading listings…</div>
+        ) : current.listings === null ? (
+          <div className="card p-6 text-center space-y-3">
+            <p role="alert">We couldn't load live listings. Try again in a moment.</p>
+            <button type="button" className="btn btn-secondary" onClick={() => setAttempt(n => n + 1)}>Try again</button>
+          </div>
         ) : sortedListings.length === 0 ? (
-          <div className="text-slate-400 text-sm py-8 text-center">No listings match your search.</div>
+          <div className="card p-6 text-center space-y-3">
+            <p>{hasFilters ? 'No listings match your search.' : 'No approved stays are listed yet.'}</p>
+            {hasFilters
+              ? <button type="button" className="btn btn-secondary" onClick={() => setFilters({ sort: filters.sort })}>Clear filters</button>
+              : <Link to="/demo" className="btn btn-secondary no-underline">Try the demo</Link>}
+          </div>
         ) : (
           <ul role="list" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {sortedListings.map((l) => (

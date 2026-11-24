@@ -40,9 +40,11 @@ export default function BookingConfirmationPage() {
   useEffect(() => {
     if (!listingId) return
     let cancelled = false
-    fetchListing(listingId).then(l => { if (!cancelled) setListing(l) })
+    fetchListing(listingId, getToken)
+      .then(l => { if (!cancelled) setListing(l) })
+      .catch(() => { if (!cancelled) setError('We could not load this listing. Check My Trips for your reservation status.') })
     return () => { cancelled = true }
-  }, [listingId])
+  }, [getToken, listingId])
 
   // Verify the Stripe Checkout session. Booking persistence, the host↔guest
   // conversation, and both notifications all happen server-side in the

@@ -49,6 +49,7 @@ it('keeps a trip upcoming while the refund is pending, and shows it cancelled on
 it('directs a booking that missed the refund cutoff to support', async () => {
   mocks.fetchGuestBookings.mockResolvedValue([{ ...booking, refundCutoffAt: '2000-01-01T00:00:00Z' }])
   render(<MemoryRouter><TripsPage /></MemoryRouter>)
-  expect(await screen.findByText(/contact support to request a change/i)).toBeVisible()
+  expect(await screen.findByRole('link', { name: 'Request a change from support' }))
+    .toHaveAttribute('href', '/support?topic=cancellation&reference=WBTEST')
   expect(screen.queryByRole('button', { name: /cancel booking/i })).not.toBeInTheDocument()
 })

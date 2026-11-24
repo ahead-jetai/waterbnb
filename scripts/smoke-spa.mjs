@@ -15,7 +15,7 @@ const health = await get('/healthz.json', 'application/json')
 assert.equal((await health.json()).service, 'waterbnb')
 const app = await (await get('/', 'text/html')).text()
 assert.match(app, /id="root"/)
-for (const path of ['/trips', '/hosting', '/booking/staging-probe/payment']) {
+for (const path of ['/trips', '/hosting', '/booking/staging-probe/payment', '/terms', '/privacy', '/cancellation', '/safety', '/support']) {
   assert.equal(await (await get(path, 'text/html')).text(), app, `${path} must serve the app shell`)
 }
 const entry = app.match(/<script\b[^>]*\bsrc="(\/assets\/[^"]+\.js)"/)?.[1]

@@ -36,6 +36,8 @@ Status: local implementation; **hosted staging verification is still required** 
 
 ## 4. Get the marketplace ready for guests
 
-- Publish real Terms, Privacy, cancellation and support pages. Keep fictional listings in the demo, not live browse or booking.
-- Confirm applicable rental and marina rules, insurance, and guest safety requirements. Vet the first hosts and inventory in one market.
-- Test public links, the real inventory and empty/error states, and the support flow. Start with an invite-only pilot before opening public bookings.
+Status: app changes complete; **pilot remains closed**. See the [Los Angeles pilot checklist](los-angeles-pilot.md).
+
+- Public Terms and Privacy drafts, cancellation, safety, and support routes are available. Live browse contains only approved inventory, distinguishes empty from unavailable, and never falls back to fictional listings.
+- The Los Angeles pilot is for moored overnight stays only. A booking requires a vetted listing, invited host and guest, and an operator-controlled open switch. Review-sensitive edits withdraw publication; existing trip and refund access is preserved.
+- Before enabling the pilot: sign off on legal and privacy copy, verify each actual berth's rental permissions, insurance and guest safety, test the inbox, and finish the hosted staging walkthrough and restore rehearsal from Priority 3.

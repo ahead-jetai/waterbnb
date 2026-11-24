@@ -44,4 +44,26 @@ describe('Entering and leaving the demo from the live app', () => {
     expect(window.location.pathname).toBe('/')
     expectLiveShell()
   })
+
+  describe('Public launch information', () => {
+    it.each([
+      ['Terms', 'Terms of Use'],
+      ['Privacy', 'Privacy Notice'],
+      ['Cancellation', 'Cancellation and refunds'],
+      ['Safety', 'Safe stays on the water'],
+      ['Support', 'WaterBnB Support'],
+    ])('opens %s from the footer while signed out', (label, title) => {
+      render(<App />)
+      fireEvent.click(within(screen.getByRole('navigation', { name: 'Footer' })).getByRole('link', { name: label }))
+      expect(screen.getByRole('heading', { name: title })).toBeVisible()
+    })
+
+    it('provides a support email with a safe refund reference without asking for card details', () => {
+      window.history.replaceState(null, '', '/support?topic=cancellation&reference=WB12345')
+      render(<App />)
+      const href = screen.getByRole('link', { name: 'Email support' }).getAttribute('href')
+      expect(href).toBe('mailto:ahead747@gmail.com?subject=WaterBnB%20booking%20or%20refund&body=Booking%20reference%3A%20WB12345%0A%0A')
+      expect(screen.getByText(/do not email payment card numbers/i)).toBeVisible()
+    })
+  })
 })

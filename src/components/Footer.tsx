@@ -3,12 +3,11 @@ import { Link } from 'react-router-dom'
 export default function Footer() {
   const year = new Date().getFullYear()
   const links = [
-    { href: '#about', label: 'About' },
-    { href: '#careers', label: 'Careers' },
-    { href: '#help', label: 'Help' },
-    { href: '#terms', label: 'Terms' },
-    { href: '#privacy', label: 'Privacy' },
-    { href: '#contact', label: 'Contact' },
+    { href: '/terms', label: 'Terms' },
+    { href: '/privacy', label: 'Privacy' },
+    { href: '/cancellation', label: 'Cancellation' },
+    { href: '/safety', label: 'Safety' },
+    { href: '/support', label: 'Support' },
   ]
   return (
     <footer className="mt-16 bg-muted text-white/80">
@@ -24,7 +23,7 @@ export default function Footer() {
             <span className="font-display font-semibold text-xl tracking-tight text-white">WaterBnB</span>
           </div>
           <p className="text-sm text-white/60 leading-relaxed max-w-xs">
-            Boat-based stays across the world. Find your next adventure on the water.
+            An invite-only pilot for moored overnight stays in Los Angeles, California.
           </p>
         </div>
         <nav aria-label="Footer" className="sm:justify-self-end lg:justify-self-center">
@@ -32,9 +31,9 @@ export default function Footer() {
             <li><Link to="/demo" className="text-white/60 hover:text-white no-underline transition-colors duration-150">Try the demo</Link></li>
             {links.map((l) => (
               <li key={l.label}>
-                <a className="text-white/60 hover:text-white no-underline transition-colors duration-150" href={l.href}>
+                <Link className="text-white/60 hover:text-white no-underline transition-colors duration-150" to={l.href}>
                   {l.label}
-                </a>
+                </Link>
               </li>
             ))}
           </ul>

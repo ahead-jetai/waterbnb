@@ -68,7 +68,7 @@ export default function HostEarningsPage() {
     let cancelled = false
     const load = async () => {
       try {
-        const listings = await fetchHostListings(user.id)
+        const listings = await fetchHostListings(user.id, getToken)
         // Stripe can be slow/unconfigured; booking analytics should still render.
         const [earningsResult, analyticsResult] = await Promise.allSettled([
           fetchEarnings(getToken),

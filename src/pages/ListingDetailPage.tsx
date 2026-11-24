@@ -1,12 +1,14 @@
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { useUser } from '@clerk/clerk-react';
+import { useAuth, useUser } from '@clerk/clerk-react';
 import { fetchListing } from '../utils/listingsApi';
 import { fetchUnavailableRanges, rangesOverlap, type UnavailableRange } from '../utils/bookingsApi';
 import { fetchHostProfile, type HostProfile } from '../utils/hostProfilesApi';
 import StarRating from '../components/StarRating';
 import type { BookingData, Listing } from '../bookingTypes';
 import { bookingModeLabel, bookingModeSummary } from '../utils/bookingMode';
+import { fetchPilotAccess } from '../utils/paymentsApi';
+import { SupportLink } from '../components/SupportLink';
 
 /** Clickable host byline that lands on the host's public profile page. */
 function HostCard({ hostId, profile }: { hostId: string; profile: HostProfile | null }) {
@@ -99,8 +101,11 @@ export default function ListingDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useUser();
+  const { getToken } = useAuth();
   const [listing, setListing] = useState<Listing | null>(null);
   const [loading, setLoading] = useState(true);
+  const [listingError, setListingError] = useState<string | null>(null);
+  const [bookingAccess, setBookingAccess] = useState<{ id: string; status: 'allowed' | 'denied' | 'error' } | null>(null);
   const [checkIn, setCheckIn] = useState('');
   const [checkOut, setCheckOut] = useState('');
   const [guests, setGuests] = useState(1);
@@ -111,20 +116,37 @@ export default function ListingDetailPage() {
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
-    fetchListing(id).then(l => {
+    Promise.all([fetchListing(id), fetchUnavailableRanges(id)]).then(([l, ranges]) => {
       if (!cancelled) {
+        setListingError(null);
         setListing(l);
+        setBookedRanges(ranges);
+        setHostProfile(null);
         setLoading(false);
         if (l?.hostId) {
           fetchHostProfile(l.hostId).then(p => { if (!cancelled) setHostProfile(p) });
         }
       }
-    });
-    fetchUnavailableRanges(id).then(ranges => {
-      if (!cancelled) setBookedRanges(ranges);
+    }).catch(() => {
+      if (!cancelled) {
+        setListingError("We couldn't load this live listing or its availability.");
+        setLoading(false);
+      }
     });
     return () => { cancelled = true };
   }, [id]);
+
+  const accessId = listing?.id === id ? id : undefined;
+  useEffect(() => {
+    if (!accessId) return;
+    let cancelled = false;
+    fetchPilotAccess(getToken, accessId).then(eligible => {
+      if (!cancelled) setBookingAccess({ id: accessId, status: eligible ? 'allowed' : 'denied' });
+    }).catch(() => {
+      if (!cancelled) setBookingAccess({ id: accessId, status: 'error' });
+    });
+    return () => { cancelled = true };
+  }, [accessId, getToken]);
 
   const formatShort = (iso: string) =>
     new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -137,11 +159,13 @@ export default function ListingDetailPage() {
     );
   }
 
-  if (!listing) {
+  if (listingError || !listing) {
     return (
       <div className="container-p py-16 text-center">
-        <h1 className="font-display text-3xl font-semibold mb-4">Listing Not Found</h1>
-        <p className="text-slate-500 mb-8">The listing you're looking for doesn't exist.</p>
+        <h1 className="font-display text-3xl font-semibold mb-4">{listingError ? 'Listing temporarily unavailable' : 'Listing not available'}</h1>
+        <p className="text-slate-500 mb-8" role={listingError ? 'alert' : undefined}>
+          {listingError ?? 'This listing is not in the live pilot catalog.'}
+        </p>
         <Link to="/" className="btn btn-primary no-underline">
           Back to Home
         </Link>
@@ -149,8 +173,10 @@ export default function ListingDetailPage() {
     );
   }
 
+  const access = bookingAccess?.id === listing.id ? bookingAccess.status : 'loading';
   const handleReserve = (e: React.FormEvent) => {
     e.preventDefault();
+    if (access !== 'allowed' || listing.id !== id) return;
     setDateError('');
 
     if (!checkIn || !checkOut) {
@@ -252,11 +278,11 @@ export default function ListingDetailPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <h3 className="font-semibold text-slate-900 mb-1">Check-in</h3>
-                <p className="text-slate-500 text-sm">After 3:00 PM</p>
+                <p className="text-slate-500 text-sm">Confirm boarding details with your host. Your local-time refund cutoff appears in Checkout.</p>
               </div>
               <div>
                 <h3 className="font-semibold text-slate-900 mb-1">Check-out</h3>
-                <p className="text-slate-500 text-sm">Before 11:00 AM</p>
+                <p className="text-slate-500 text-sm">Follow the host's checkout and marina instructions.</p>
               </div>
               <div>
                 <h3 className="font-semibold text-slate-900 mb-1">Booking approval</h3>
@@ -280,10 +306,11 @@ export default function ListingDetailPage() {
               <StarRating value={listing.rating} count={listing.reviews} />
             </div>
 
-            <form onSubmit={handleReserve} className="space-y-4">
+            {access === 'allowed' ? <form onSubmit={handleReserve} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Check-in</label>
+                <label htmlFor="listing-check-in" className="block text-sm font-medium text-slate-700 mb-1.5">Check-in</label>
                 <input
+                  id="listing-check-in"
                   type="date"
                   value={checkIn}
                   onChange={(e) => setCheckIn(e.target.value)}
@@ -293,8 +320,9 @@ export default function ListingDetailPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Check-out</label>
+                <label htmlFor="listing-check-out" className="block text-sm font-medium text-slate-700 mb-1.5">Check-out</label>
                 <input
+                  id="listing-check-out"
                   type="date"
                   value={checkOut}
                   onChange={(e) => setCheckOut(e.target.value)}
@@ -318,13 +346,14 @@ export default function ListingDetailPage() {
                 </div>
               )}
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Guests</label>
+                <label htmlFor="listing-guests" className="block text-sm font-medium text-slate-700 mb-1.5">Guests</label>
                 <select
+                  id="listing-guests"
                   value={guests}
                   onChange={(e) => setGuests(parseInt(e.target.value))}
                   className="input"
                 >
-                  {[1, 2, 3, 4, 5, 6].map(n => (
+                  {Array.from({ length: listing.capacity ?? 1 }, (_, i) => i + 1).map(n => (
                     <option key={n} value={n}>{n} {n === 1 ? 'guest' : 'guests'}</option>
                   ))}
                 </select>
@@ -332,10 +361,16 @@ export default function ListingDetailPage() {
               <button type="submit" className="btn btn-primary w-full mt-2">
                 Reserve
               </button>
-            </form>
+            </form> : (
+              <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-700" role={access === 'error' ? 'alert' : 'status'}>
+                {access === 'loading' ? 'Checking pilot access…'
+                  : access === 'error' ? <>We couldn't verify booking access. <SupportLink />.</>
+                  : <>Bookings are invitation-only and may be paused. <SupportLink topic="invite">Ask about the pilot</SupportLink>.</>}
+              </p>
+            )}
 
             <p className="text-center text-xs text-slate-400 mt-4">
-              You won't be charged yet
+              <Link to="/cancellation">Cancellation and refunds</Link> · <Link to="/safety">Safety guidance</Link>
             </p>
           </div>
         </div>

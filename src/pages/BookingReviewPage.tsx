@@ -1,4 +1,4 @@
-import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { fetchListing } from '../utils/listingsApi'
 import type { BookingData, Listing } from '../bookingTypes'
 import { useEffect, useState } from 'react'
@@ -11,6 +11,7 @@ export default function BookingReviewPage() {
   const navigate = useNavigate()
   const bookingData = location.state?.bookingData as BookingData | undefined
   const [listing, setListing] = useState<Listing | null>(null)
+  const [listingError, setListingError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!bookingData) navigate(`/listing/${listingId}`)
@@ -19,10 +20,23 @@ export default function BookingReviewPage() {
   useEffect(() => {
     if (!listingId) return
     let cancelled = false
-    fetchListing(listingId).then(l => { if (!cancelled) setListing(l) })
+    fetchListing(listingId).then(l => {
+      if (!cancelled) {
+        setListing(l)
+        setListingError(l ? null : 'This stay is no longer in the pilot catalog.')
+      }
+    }).catch(() => {
+      if (!cancelled) setListingError("We couldn't load this live listing.")
+    })
     return () => { cancelled = true }
   }, [listingId])
 
+  if (listingError) return (
+    <main className="container-p py-16 text-center">
+      <p role="alert" className="mb-4">{listingError}</p>
+      <Link to="/" className="btn btn-secondary no-underline">Back to listings</Link>
+    </main>
+  )
   if (!listing || !bookingData) {
     return null
   }

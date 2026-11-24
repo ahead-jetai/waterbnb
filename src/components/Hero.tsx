@@ -21,15 +21,14 @@ export default function Hero({ ctas }: HeroProps) {
 
       <div className="container-p pt-24 pb-20 sm:pt-32 sm:pb-24 lg:pt-40 lg:pb-28 text-white">
         <p className="font-display italic text-brand-light text-lg sm:text-xl mb-4 animate-fade-in">
-          Unique water-based stays worldwide
+          Los Angeles, California · invite-only pilot
         </p>
         <h1 className="font-display text-5xl sm:text-6xl lg:text-7xl font-medium leading-[1.1] tracking-tight max-w-3xl animate-fade-up">
           Stay on the water,<br />
           <em className="italic">wake to adventure.</em>
         </h1>
         <p className="mt-6 max-w-xl text-base sm:text-lg text-white/80 font-light leading-relaxed [animation-delay:0.15s] animate-fade-up">
-          Discover cabins, yachts, and houseboats around the world.
-          From harbor hideaways to open-sea escapes.
+          Explore overnight stays on boats that remain moored. No charter or boat operation is included.
         </p>
         <div className="mt-8 flex flex-wrap gap-3 [animation-delay:0.3s] animate-fade-up">
           {ctas ?? (
@@ -41,30 +40,6 @@ export default function Hero({ ctas }: HeroProps) {
         </div>
       </div>
 
-      {/* Stats strip */}
-      <div className="relative bg-white/10 backdrop-blur-sm border-t border-white/10 [animation-delay:0.45s] animate-fade-up">
-        <div className="container-p py-4 flex items-center gap-6 overflow-x-auto text-white">
-          <div className="flex items-center gap-2 whitespace-nowrap flex-shrink-0">
-            <span className="font-display text-2xl font-medium">200+</span>
-            <span className="text-sm text-white/70">Unique Stays</span>
-          </div>
-          <div className="w-px h-5 bg-white/20 flex-shrink-0" />
-          <div className="flex items-center gap-2 whitespace-nowrap flex-shrink-0">
-            <span className="font-display text-2xl font-medium">40+</span>
-            <span className="text-sm text-white/70">Countries</span>
-          </div>
-          <div className="w-px h-5 bg-white/20 flex-shrink-0" />
-          <div className="flex items-center gap-2 whitespace-nowrap flex-shrink-0">
-            <span className="font-display text-2xl font-medium">4.9★</span>
-            <span className="text-sm text-white/70">Avg. Rating</span>
-          </div>
-          <div className="w-px h-5 bg-white/20 flex-shrink-0" />
-          <div className="flex items-center gap-2 whitespace-nowrap flex-shrink-0">
-            <span className="font-display text-2xl font-medium">10k+</span>
-            <span className="text-sm text-white/70">Happy Guests</span>
-          </div>
-        </div>
-      </div>
     </section>
   )
 }

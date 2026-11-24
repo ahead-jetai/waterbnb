@@ -1,5 +1,6 @@
 import { SignIn } from '@clerk/clerk-react'
 import { useLocation } from 'react-router-dom'
+import { SupportLink } from '../components/SupportLink'
 
 export default function SignInPage() {
   const location = useLocation()
@@ -20,6 +21,7 @@ export default function SignInPage() {
         afterSignInUrl={returnTo}
         signUpUrl="/sign-up"
       />
+      <p className="mt-4 text-sm"><SupportLink topic="invite">Request a pilot invitation</SupportLink></p>
     </div>
   )
 }

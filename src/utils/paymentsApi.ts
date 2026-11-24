@@ -30,9 +30,15 @@ async function invoke<T>(route: string, getToken: TokenGetter, body: Record<stri
       const payload = await error.context.json().catch(() => null)
       if (payload?.error) throw new Error(payload.error)
     }
+
     throw new Error(error.message ?? 'Payment request failed')
   }
   return data as T
+}
+
+export async function fetchPilotAccess(getToken: TokenGetter, listingId: string): Promise<boolean> {
+  const { eligible } = await invoke<{ eligible: boolean }>('pilot-access', getToken, { listingId })
+  return eligible
 }
 
 /** Create (or reuse) the host's Stripe connected account. */

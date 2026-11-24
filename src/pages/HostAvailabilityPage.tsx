@@ -25,7 +25,7 @@ export default function HostAvailabilityPage() {
   useEffect(() => {
     if (!id) return
     let cancelled = false
-    Promise.all([fetchListing(id), fetchBlockedRanges(getToken, id), fetchBookedDateRanges(id)]).then(
+    Promise.all([fetchListing(id, getToken), fetchBlockedRanges(getToken, id), fetchBookedDateRanges(id, getToken)]).then(
       ([l, blockedRanges, bookedRanges]) => {
         if (cancelled) return
         setListing(l)
@@ -33,7 +33,12 @@ export default function HostAvailabilityPage() {
         setBooked(bookedRanges)
         setLoading(false)
       }
-    )
+    ).catch(() => {
+      if (!cancelled) {
+        setError("We couldn't load this listing or calendar.")
+        setLoading(false)
+      }
+    })
     return () => { cancelled = true }
   }, [getToken, id])
 
@@ -49,7 +54,7 @@ export default function HostAvailabilityPage() {
     return (
       <div className="container-p py-16 text-center">
         <h1 className="font-display text-3xl font-semibold mb-4">Not available</h1>
-        <p className="text-slate-500 mb-8">This listing doesn't exist or you don't manage it.</p>
+        <p className="text-slate-500 mb-8" role={error ? 'alert' : undefined}>{error || "This listing doesn't exist or you don't manage it."}</p>
         <Link to="/hosting" className="btn btn-primary no-underline">Back to dashboard</Link>
       </div>
     )

@@ -5,6 +5,7 @@ import { fetchGuestBookings } from '../utils/bookingsApi'
 import { cancelBooking } from '../utils/paymentsApi'
 import { formatDateLong, pluralize, calculateNights } from '../utils/booking'
 import type { Booking } from '../bookingTypes'
+import { SupportLink } from '../components/SupportLink'
 
 function isUpcoming(booking: Booking, now: number): boolean {
   return booking.status === 'confirmed' && Date.parse(booking.checkOut) >= now
@@ -89,10 +90,10 @@ function TripCard({ booking, now, onCancel, cancelling }: {
 
         {upcoming && (
           <p className="text-xs text-slate-600 mt-3">
-            {booking.refundStatus === 'failed' ? 'The refund failed. Your reservation remains active; contact support.'
+            {booking.refundStatus === 'failed' ? <>The refund failed. Your reservation remains active. <SupportLink topic="cancellation" reference={booking.bookingReference} />.</>
               : refundInProgress ? 'Refund requested. Your reservation remains active until the refund succeeds.'
               : canCancel && cutoff ? `Full refund including fees until ${cutoff.toLocaleString()} (your local time).`
-              : 'Automatic cancellation is unavailable. Contact support to request a change.'}
+              : <>Automatic cancellation is unavailable. <SupportLink topic="cancellation" reference={booking.bookingReference}>Request a change from support</SupportLink>.</>}
           </p>
         )}
         {booking.refundStatus === 'succeeded' && <p className="text-xs text-slate-600 mt-3">Full refund issued.</p>}
@@ -166,6 +167,7 @@ export default function TripsPage() {
   return (
     <div className="container-p py-8 max-w-4xl">
       <h1 className="font-display text-3xl font-medium text-muted mb-6">My Trips</h1>
+      <p className="text-sm text-slate-600 mb-6"><Link to="/cancellation">Cancellation and refund policy</Link> · <SupportLink /></p>
 
       {bookings.length === 0 ? (
         <div className="card p-8 text-center">

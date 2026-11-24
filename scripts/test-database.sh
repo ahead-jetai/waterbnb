@@ -29,6 +29,7 @@ psql -X -q -d waterbnb_holds -f supabase/tests/checkout_holds_and_refunds.sql
 psql -X -q -d postgres -c 'alter role service_role bypassrls'
 createdb waterbnb_marketplace
 psql -X -q -d waterbnb_marketplace -f supabase/tests/marketplace_access_controls.sql
+psql -X -q -d waterbnb_marketplace -f supabase/tests/invite_only_pilot.sql
 
 pg_dump -Fc -d waterbnb_marketplace -f "$tmp/backup.dump"
 createdb waterbnb_restore
@@ -36,4 +37,5 @@ pg_restore --exit-on-error -d waterbnb_restore "$tmp/backup.dump"
 test "$(psql -XAt -d waterbnb_restore -c 'select count(*) from public.bookings')" = 2
 test "$(psql -XAt -d waterbnb_restore -c "select id from storage.buckets where id = 'listing-images' and public")" = listing-images
 test "$(psql -XAt -d waterbnb_restore -c "select has_column_privilege('anon', 'public.bookings', 'guest_email', 'SELECT')")" = f
+test "$(psql -XAt -d waterbnb_restore -c 'select bookings_enabled from public.pilot_settings')" = f
 echo 'Migration, access control, booking concurrency, and database restore checks passed.'

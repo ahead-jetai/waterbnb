@@ -145,8 +145,8 @@ export default function Header() {
             <Link to="/sign-in" className="btn btn-secondary no-underline" aria-label="Sign in">
               Sign in
             </Link>
-            <Link to="/sign-up" className="btn btn-primary no-underline" aria-label="Get started">
-              Get started
+            <Link to="/support?topic=invite" className="btn btn-primary no-underline">
+              Request an invite
             </Link>
           </SignedOut>
           <SignedIn>
@@ -179,8 +179,8 @@ export default function Header() {
         <div className="md:hidden border-t border-black/5 animate-fade-in">
           <div className="container-p py-4 flex flex-col gap-3">
             <SignedOut>
-              <Link className="btn btn-primary w-full no-underline" to="/sign-up" onClick={closeMenu}>
-                Get started
+              <Link className="btn btn-primary w-full no-underline" to="/support?topic=invite" onClick={closeMenu}>
+                Request an invite
               </Link>
               <Link className="btn btn-secondary w-full no-underline" to="/sign-in" onClick={closeMenu}>
                 Sign in

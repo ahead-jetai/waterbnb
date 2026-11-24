@@ -13,6 +13,7 @@
  *   /onboarding-link   {}                             -> { url }
  *   /connect-status    {}                             -> { hasAccount, ... }
  *   /booking-request   { listingId, ... }             -> { booking }
+ *   /pilot-access      { listingId }                  -> { eligible }
  *   /checkout          { listingId, ... }             -> { url }
  *   /approved-request-checkout { bookingId }          -> { url }
  *   /checkout-booking  { bookingId }                  -> { booking }
@@ -102,6 +103,14 @@ function json(body: unknown, status = 200): Response {
 
 function fail(status: number, message: string): Response {
   return json({ error: message }, status)
+}
+
+const pilotOnly = () => fail(403, 'Bookings are available only to invited guests on approved pilot listings.')
+
+async function pilotCanBook(guestId: string, listingId: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc('pilot_can_book', { p_guest: guestId, p_listing: listingId })
+  if (error) throw error
+  return data === true
 }
 
 function nightsBetween(checkIn: string, checkOut: string): number {
@@ -246,9 +255,12 @@ async function bookingRequest(body: Record<string, unknown>, guestId: string): P
     guests?: number
     guestDetails?: { name?: string; email?: string; phone?: string; specialRequests?: string }
   }
-  if (!listingId || !checkIn || !checkOut || !guests || !guestDetails?.email) {
+  if (typeof listingId !== 'string' || !listingId || typeof checkIn !== 'string' || typeof checkOut !== 'string' ||
+      !validDates(checkIn, checkOut) || typeof guests !== 'number' || !Number.isInteger(guests) || guests <= 0 ||
+      typeof guestDetails?.email !== 'string' || !guestDetails.email) {
     return fail(400, 'listingId, checkIn, checkOut, guests, and guestDetails are required')
   }
+  if (!await pilotCanBook(guestId, listingId)) return pilotOnly()
 
   const { data: listing, error } = await supabase
     .from('listings')
@@ -257,6 +269,7 @@ async function bookingRequest(body: Record<string, unknown>, guestId: string): P
     .maybeSingle()
   if (error || !listing) return fail(404, 'Listing not found')
   if (!listing.host_id) return fail(400, 'This listing has no host')
+  if (guests > listing.capacity) return fail(400, 'Too many guests for this listing')
   if (listing.auto_approve_bookings ?? true) {
     return fail(409, 'This listing is instant booking. Please use checkout.')
   }
@@ -283,6 +296,7 @@ async function bookingRequest(body: Record<string, unknown>, guestId: string): P
     })
     .select()
     .single()
+  if (inserted?.code === 'P4403') return pilotOnly()
   if (inserted) throw new Error(`Could not save booking request: ${inserted.message}`)
 
   const checkInLong = new Date(checkIn + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
@@ -319,12 +333,13 @@ async function checkout(body: Record<string, unknown>, guestId: string): Promise
     guests?: number
     guestDetails?: { name?: string; email?: string; phone?: string; specialRequests?: string }
   }
-  if (typeof listingId !== 'string' || typeof checkIn !== 'string' || typeof checkOut !== 'string' ||
+  if (typeof listingId !== 'string' || !listingId || typeof checkIn !== 'string' || typeof checkOut !== 'string' ||
       !validDates(checkIn, checkOut) ||
       typeof guests !== 'number' || !Number.isInteger(guests) || guests <= 0 ||
       typeof guestDetails?.email !== 'string' || !guestDetails.email) {
     return fail(400, 'listingId, checkIn, checkOut, guests, and guestDetails are required')
   }
+  if (!await pilotCanBook(guestId, listingId)) return pilotOnly()
 
   const { data: listing, error } = await supabase
     .from('listings')
@@ -374,6 +389,7 @@ async function approvedRequestCheckout(body: Record<string, unknown>, guestId: s
   if (typeof bookingId !== 'string' || !bookingId) return fail(400, 'bookingId is required')
   const booking = await bookingAwaitingCheckout(bookingId, guestId)
   if (!booking) return fail(404, 'Approved booking request not found')
+  if (!await pilotCanBook(guestId, booking.listing_id)) return pilotOnly()
 
   const listing = booking.listing
   if (!listing?.host_id) return fail(400, 'This listing has no host to pay')
@@ -408,6 +424,7 @@ async function reserveAndCheckout(
   }
   const { data: booking, error } = result
   if (error) {
+    if (error.code === 'P4403') return pilotOnly()
     if (error.code === '23P01') return fail(409, 'These dates are no longer available.')
     if (error.code === 'P0002') return fail(404, 'Booking awaiting payment not found.')
     if (error.code === 'P0001' || error.code === '22023') return fail(409, error.message)
@@ -502,6 +519,7 @@ async function resumeCheckout(booking: CheckoutBooking): Promise<Response> {
     .eq('id', booking.id).eq('status', 'checkout_pending')
     .or(`checkout_session_id.is.null,checkout_session_id.eq.${session.id}`)
     .select('id').maybeSingle()
+  if (error?.code === 'P4403') return pilotOnly()
   if (error) throw error
   if (!attached || !session.url) return fail(409, 'This checkout is no longer available.')
   return json({ url: session.url })
@@ -712,6 +730,7 @@ async function approveBooking(body: Record<string, unknown>, hostId: string): Pr
     .eq('status', 'pending')
     .select('*')
     .single()
+  if (updateError?.code === 'P4403') return pilotOnly()
   if (updateError) throw new Error(`Could not approve request: ${updateError.message}`)
 
   const { data: others } = await supabase
@@ -1021,6 +1040,9 @@ Deno.serve(async (req: Request) => {
         return await connectStatus(userId)
       case 'booking-request':
         return await bookingRequest(body, userId)
+      case 'pilot-access':
+        if (typeof body.listingId !== 'string' || !body.listingId) return fail(400, 'listingId is required')
+        return json({ eligible: await pilotCanBook(userId, body.listingId) })
       case 'checkout':
         return await checkout(body, userId)
       case 'approved-request-checkout':
